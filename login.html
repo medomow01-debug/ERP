@@ -1,0 +1,12 @@
+<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>تسجيل الدخول</title>
+<link rel="stylesheet" href="style.css"><script src="app.js"></script></head><body><div class="box" id="f"></div><script>
+const chg=location.search.includes('change')&&S;
+function draw(){$('#f').innerHTML=chg?`<h3>تغيير كلمة المرور</h3>${F('o','كلمة المرور الحالية','password')}${F('a','كلمة المرور الجديدة','password')}${F('b','تأكيد كلمة المرور الجديدة','password')}<button onclick="change()">حفظ ودخول</button>`
+ :`<h3>تسجيل الدخول</h3>${F('u','اسم المستخدم')}${F('p','كلمة المرور','password','onkeydown="event.key==\'Enter\'&&login()"')}<button onclick="login()">دخول</button>`}
+async function login(){try{const r=await rpc('app_login',{u:v('#u'),p:v('#p')});if(!r)return toast('اسم المستخدم أو كلمة المرور غير صحيحة');
+ localStorage.erp=JSON.stringify(r);location=r.must_change?'login.html?change=1':'index.html'}catch(e){toast(e.message)}}
+async function change(){try{if(v('#a')!=v('#b'))return toast('التأكيد غير مطابق');
+ const ok=await rpc('app_change_pass',{o:v('#o'),n:v('#a')});if(!ok)return toast('كلمة المرور الحالية غير صحيحة');
+ S.must_change=false;localStorage.erp=JSON.stringify(S);location='index.html'}catch(e){toast(e.message)}}
+draw();
+</script></body></html>

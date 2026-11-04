@@ -1,0 +1,14 @@
+:root{--c:#0f766e;--bg:#f5f6f3;--ln:#d9ddd6}*{box-sizing:border-box}
+body{margin:0;font:15px/1.6 Tahoma,"Segoe UI",sans-serif;background:var(--bg);color:#1c2321}
+#nav{background:var(--c);color:#fff;padding:8px 14px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+#nav a{color:#fff;text-decoration:none;padding:5px 12px;border-radius:6px}#nav a.on,#nav a:hover{background:#fff;color:var(--c)}#nav b{margin-inline-end:12px}
+.alert{display:block;background:#fff3cd;color:#664d03;padding:8px 16px;text-decoration:none}.warn{background:#fff3cd!important}
+main{padding:14px;max-width:1150px;margin:auto}section{background:#fff;border:1px solid var(--ln);border-radius:8px;padding:14px;margin-bottom:14px}
+h3{margin:0 0 10px}.r{display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:8px}label{display:grid;font-size:13px;gap:2px}label.ck{display:flex;gap:4px;align-items:center}
+input,select{padding:7px;border:1px solid var(--ln);border-radius:6px;font:inherit;min-width:110px}input[type=checkbox]{min-width:0}
+button{background:var(--c);color:#fff;border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit}button.g{background:#6b7280}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #000}
+.sc{overflow-x:auto}table{width:100%;border-collapse:collapse;margin-top:6px}th,td{border-bottom:1px solid var(--ln);padding:6px;text-align:start;white-space:nowrap}th{background:#eef0ea}
+.low{background:#fde8e8}.msg{position:fixed;bottom:14px;left:14px;background:#222;color:#fff;padding:10px 16px;border-radius:6px;z-index:9}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}.cards div{background:#fff;border:1px solid var(--ln);border-radius:8px;padding:14px}.cards b{display:block;font-size:22px}
+.box{max-width:340px;margin:12vh auto;background:#fff;padding:20px;border-radius:10px;display:grid;gap:10px}
+.ph{display:none}@media print{#nav,.alert,.np,.msg,section:not(.pr),button{display:none!important}.ph{display:block}main{padding:0}.pr{border:0}}

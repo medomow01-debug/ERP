@@ -1,0 +1,55 @@
+<!DOCTYPE html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>الشركاء والأرباح</title><link rel=stylesheet href=style.css><script src=https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js></script><script src=app.js></script></head><body><div id=nav></div><main id=app></main><script>
+let D={};
+async function load(){const [p,l,pd,d]=await Promise.all([api('partners?order=id'),all('partner_ledger?order=id'),api('periods?order=id'),api('profit_dist?select=*,partners(name)&order=id.desc')]);
+ CUR=pd.find(x=>x.status=='open');D={p,l,pd,d};D.pf=await PROFIT(CUR.start_at,new Date().toISOString());D.alloc=sum(l.filter(x=>x.kind=='profit'&&x.period_id==CUR.id),x=>x.amount);
+ const t=await all('treasury_tx?select=kind,amount&order=id');D.cash=sum(t,x=>x.kind=='in'?x.amount:-x.amount)}
+const sg={deposit:1,retain:1,capital_out:-1},sp={profit:1,payout:-1,retain:-1};
+const cb=id=>sum(D.l.filter(x=>x.partner_id==id),x=>(sg[x.kind]||0)*x.amount),pb=id=>sum(D.l.filter(x=>x.partner_id==id),x=>(sp[x.kind]||0)*x.amount);
+const act=()=>D.p.filter(x=>x.active),totCap=()=>sum(act(),x=>cb(x.id));
+const dpc=x=>x.pct!=null?+x.pct:totCap()?+(cb(x.id)/totCap()*100).toFixed(2):0;
+const LG=(p,kind,amount,note,per)=>post('partner_ledger',{partner_id:p,kind,amount,period_id:per??CUR.id,note});
+const addP=()=>post('partners',{name:v('#pn'),phone:v('#pph')});
+async function deposit(){const p=n('#dp'),a=n('#da');if(!p||a<=0)throw Error('بيانات غير صحيحة');await LG(p,'deposit',a,'إيداع');await post('treasury_tx',{kind:'in',amount:a,source:'partner',partner_id:p,note:'إيداع شريك',payee:null})}
+async function savePct(){if(S.role!='admin')throw Error('للمدير فقط');for(const x of act()){const t=$('#pc'+x.id).value;await patch('partners','id=eq.'+x.id,{pct:t===''?null:+t})}}
+async function distribute(){const tot=D.pf.net-D.alloc;if(tot<=0)throw Error('لا توجد أرباح قابلة للتوزيع');const rows=act().map(x=>({x,pc:n('#pc'+x.id)}));
+ if(sum(rows,r=>r.pc)>100.01)throw Error('مجموع النسب أكبر من 100%');
+ for(const r of rows){const a=+(tot*r.pc/100).toFixed(2);if(a<=0)continue;await post('profit_dist',{period_id:CUR.id,partner_id:r.x.id,pct:r.pc,amount:a});await LG(r.x.id,'profit',a,'توزيع أرباح')}
+ await patch('periods','id=eq.'+CUR.id,{distributed:true})}
+async function closePeriod(){if(!CUR.distributed)throw Error('وزّع الأرباح أولاً');if(D.pf.net-D.alloc>0.5&&!confirm('توجد أرباح غير موزعة ستُصفّر. متابعة؟'))return;
+ const via=v('#cv'),old=CUR.id;let need=0;
+ for(const x of act()){const p0=pb(x.id),c0=cb(x.id),rt=Math.min(n('#rt'+x.id),p0),po=p0-rt;
+  if(rt>0)await LG(x.id,'retain',rt,'ترك جزء من الربح في الخزينة',old);
+  if(po>0.005){await LG(x.id,'payout',po,'صرف أرباح الفترة',old);await PAY('out',via,po,{source:'profit_pay',partner_id:x.id,note:'أرباح '+x.name});need+=po}
+  if($('#rc'+x.id).checked&&c0>0){await LG(x.id,'capital_out',c0,'استلام رأس المال',old);await PAY('out',via,c0,{source:'capital_pay',partner_id:x.id,note:'رأس مال '+x.name});need+=c0}}
+ await patch('periods','id=eq.'+old,{status:'closed',end_at:new Date().toISOString()});const np=(await post('periods',{}))[0];
+ for(const x of act()){const a=n('#ni'+x.id);if(a>0){await LG(x.id,'deposit',a,'مساهمة بداية الفترة',np.id);await post('treasury_tx',{kind:'in',amount:a,source:'partner',partner_id:x.id,note:'مساهمة بداية فترة جديدة'})}}}
+async function dissolve(){const ids=[...document.querySelectorAll('.dp:checked')].map(x=>+x.value);if(!ids.length)throw Error('اختر شريكاً أو أكثر');
+ const mode=v('#dm'),pcx=n('#dpc'),via=v('#dv'),dist=Math.max(0,D.pf.net-D.alloc);if(mode=='cap'&&!confirm('سيأخذ المبلغ المساهم به فقط ويتنازل عن أرباحه. متابعة؟'))return;
+ for(const id of ids){const x=D.p.find(p=>p.id==id),c0=cb(id),p0=pb(id),est=dist*dpc(x)/100,per=CUR.id;
+  const credit=mode=='cap'?0:est;if(credit>0)await LG(id,'profit',+credit.toFixed(2),'هامش ربح عند فض الشراكة');
+  const bal=p0+credit,pay=mode=='cap'?0:mode=='full'?bal:bal*pcx/100;
+  if(bal>0)await LG(id,'payout',+bal.toFixed(2),pay<bal?'أرباح غير مصروفة عند فض الشراكة':'صرف أرباح عند فض الشراكة');
+  if(c0>0)await LG(id,'capital_out',c0,'استرداد رأس المال');
+  const t=+(c0+pay).toFixed(2);if(t>0)await PAY('out',via,t,{source:'partner_exit',partner_id:id,note:'فض شراكة '+x.name});
+  await patch('partners','id=eq.'+id,{active:false})}}
+function showRep(){const t=v('#rt');let rows,cols,title;
+ if(t=='sum'){title='ملخص حسابات الشركاء';rows=D.p.map(x=>({...x,c:cb(x.id),pr:pb(x.id),dp:sum(D.l.filter(l=>l.partner_id==x.id&&l.kind=='deposit'),l=>l.amount),po:sum(D.l.filter(l=>l.partner_id==x.id&&l.kind=='payout'),l=>l.amount),st:x.active?'نشط':'خرج من الشراكة'}));
+  cols={name:'الشريك',dp:'إجمالي الإيداعات',c:'رصيد رأس المال',pr:'أرباح مستحقة',po:'أرباح مصروفة',st:'الحالة'}}
+ if(t=='led'){const id=n('#rp1');title='كشف حساب شريك';rows=D.l.filter(x=>!id||x.partner_id==id).map(x=>({...x,pn:D.p.find(p=>p.id==x.partner_id)?.name,k:{deposit:'إيداع',profit:'ربح موزع',payout:'صرف/مدفوع',retain:'ترك في الخزينة',capital_out:'استرداد رأس مال'}[x.kind]}));cols={date:'التاريخ',pn:'الشريك',k:'البند',amount:'المبلغ',note:'ملاحظة'}}
+ if(t=='dst'){title='سجل توزيع الأرباح';rows=D.d.map(x=>({...x,pn:x.partners.name}));cols={date:'التاريخ',period_id:'الفترة',pn:'الشريك',pct:'النسبة %',amount:'المبلغ'}}
+ if(t=='prf'){title='تقرير الأرباح';return(async()=>{const [a,b]=isoRange(v('#d1'),v('#d2')),p=await PROFIT(a,b),g=v('#gp')=='m'?7:10;
+  $('#rp').innerHTML=REP('x',title,grp(p.recs,g).concat([{d:'الإجمالي',sales:p.sales,cost:p.cost,gross:p.gross,exp:p.exp,net:p.net}]),PCOLS)})()}
+ $('#rp').innerHTML=REP('x',title,rows,cols)}
+function render(){const pf=D.pf,dist=pf.net-D.alloc,ac=act();
+ $('#app').innerHTML=`<div class="cards"><div>رصيد الخزينة<b>${fm(D.cash)}</b></div><div>مبيعات الفترة الحالية<b>${fm(pf.sales)}</b></div><div>صافي ربح الفترة<b>${fm(pf.net)}</b></div><div>قابل للتوزيع<b>${fm(dist)}</b></div></div><br>`+
+ SEC('حسابات الشركاء',`<div class="r">${F('pn','اسم الشريك')}${F('pph','الهاتف')}<button onclick="go(addP)">إضافة شريك</button>${SL('dp','إيداع في حساب',ac)}${F('da','المبلغ','number')}<button onclick="go(deposit)">إيداع في الخزينة</button></div>
+ ${TB(D.p,{name:'الشريك',c:['رأس المال',x=>fm(cb(x.id))],pr:['أرباح مستحقة',x=>fm(pb(x.id))],s:['نسبة المساهمة %',x=>totCap()&&x.active?(cb(x.id)/totCap()*100).toFixed(1):'—'],a:['الحالة',x=>x.active?'نشط':'خرج']})}`)+
+ SEC('الأرباح وتوزيعها (الفترة الحالية)',`<p>المبيعات ${fm(pf.sales)} − التكلفة ${fm(pf.cost)} = إجمالي الربح <b>${fm(pf.gross)}</b> − مصروفات عامة ${fm(pf.exp)} = صافي الربح <b>${fm(pf.net)}</b> — سبق توزيعه ${fm(D.alloc)}</p>
+ ${TB(ac,{name:'الشريك',c:['رأس المال',x=>fm(cb(x.id))],p:['النسبة % (قابلة للتعديل)',x=>`<input type="number" id="pc${x.id}" value="${S.role=='admin'&&x.pct!=null?x.pct:dpc(x)}" ${S.role=='admin'?'':'readonly'} style="min-width:80px">`]})}
+ <div class="r"><button onclick="go(distribute)">توزيع الأرباح على الشركاء</button>${S.role=='admin'?'<button class="g" onclick="go(savePct)">حفظ النسب كنسب ثابتة</button>':''}</div>`)+
+ SEC('إنهاء الفترة المالية',CUR.distributed?`${TB(ac,{name:'الشريك',pr:['الربح المستحق',x=>fm(pb(x.id))],c:['رأس ماله',x=>fm(cb(x.id))],rt:['مبلغ يُترك في الخزينة من ربحه',x=>`<input type="number" id="rt${x.id}" value="0" style="min-width:90px">`],rc:['استلم رأس ماله؟',x=>`<input type="checkbox" id="rc${x.id}">`],ni:['مساهمته في الفترة الجديدة',x=>`<input type="number" id="ni${x.id}" value="0" style="min-width:90px">`]})}
+ <div class="r"><label>صرف الأرباح من<select id="cv"><option value="cash">الخزينة</option><option value="ext">التحويلات</option></select></label><button onclick="go(closePeriod)">إنهاء الفترة وتصفير الأرباح</button></div>`:'وزّع أرباح الفترة أولاً ليُتاح إنهاؤها.')+
+ SEC('فض شراكة',`<div class="r">${ac.map(x=>`<label class="ck"><input type="checkbox" class="dp" value="${x.id}">${x.name}</label>`).join('')}</div><div class="r"><label>يستلم<select id="dm"><option value="cap">المبلغ المساهم به فقط</option><option value="full">المبلغ + كامل هامش الربح</option><option value="part">المبلغ + نسبة من هامش الربح</option></select></label>${F('dpc','النسبة من الربح %','number','value=50')}<label>الصرف من<select id="dv"><option value="cash">الخزينة</option><option value="ext">التحويلات</option></select></label><button onclick="go(dissolve)">تنفيذ فض الشراكة</button></div>`)+
+ SEC('التقارير',`<div class="r"><label>التقرير<select id="rt" onchange="showRep()"><option value="sum">ملخص الشركاء</option><option value="led">كشف حساب شريك</option><option value="dst">سجل التوزيعات</option><option value="prf">الأرباح (يومي / شهري)</option></select></label>${SL('rp1','الشريك',[{id:0,name:'الكل'},...D.p])}<label>التجميع<select id="gp"><option value="d">يومي</option><option value="m">شهري</option></select></label>${DR('d')}<button onclick="showRep()">عرض</button></div><div id="rp"></div>`);showRep()}
+boot('partners').then(async()=>{await load();render()});
+</script></body></html>

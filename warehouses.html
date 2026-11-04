@@ -1,0 +1,46 @@
+<!DOCTYPE html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>المخازن</title><link rel=stylesheet href=style.css><script src=https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js></script><script src=app.js></script></head><body><div id=nav></div><main id=app></main><script>
+let D={};
+async function load(){const [w,c,i,b,r]=await Promise.all([api('warehouses?order=id'),api('categories?order=id'),all('items?order=id'),all('stock_balance?order=code'),api('reasons?order=id')]);D={wh:w,cat:c,items:i,bal:b,rs:r}}
+const FI=q=>D.items.find(x=>x.code==q||x.name==q);
+const addWh=()=>post('warehouses',{code:v('#wc').toUpperCase(),name:v('#wn')});
+const addCat=()=>post('categories',{code:v('#cc').toUpperCase(),name:v('#cn')});
+async function addItem(){const w=n('#iw'),it=(await post('items',{name:v('#in'),wh_id:w,cat_id:n('#ic'),buy:n('#ib'),sell:n('#is'),min_qty:v('#im')===''?5:n('#im')}))[0],q=n('#iq');
+ if(q>0){await post('stock_moves',mv(it.id,w,q,'opening'));await addBatch(it.id,q,it.buy,it.sell,w)}}
+function edit(id){const x=D.items.find(i=>i.id==id),nm=prompt('الاسم',x.name);if(nm===null)return;const b=prompt('سعر الشراء',x.buy),s=prompt('سعر البيع',x.sell),m=prompt('حد التنبيه',x.min_qty);
+ go(()=>patch('items','id=eq.'+id,{name:nm,buy:+b,sell:+s,min_qty:+m}))}
+async function xfer(){const it=FI(v('#ti')),q=n('#tq'),f=n('#tf'),t=n('#tt');if(!it||q<=0||f==t)throw Error('بيانات النقل غير صحيحة');
+ const b=D.bal.find(x=>x.item_id==it.id&&x.wh_id==f);if(!b||b.qty<q)throw Error('الرصيد غير كاف في المخزن المصدر');
+ await post('stock_moves',[mv(it.id,f,-q,'transfer_out'),mv(it.id,t,q,'transfer_in')])}
+async function adj(){const it=FI(v('#ai')),r=D.rs.find(x=>x.id==n('#ar')),w=n('#aw'),q=Math.abs(n('#aq'));if(!it||!q)throw Error('بيانات غير صحيحة');
+ if(r.sign<0){const b=D.bal.find(x=>x.item_id==it.id&&x.wh_id==w);if(!b||b.qty<q)throw Error('الرصيد غير كاف');await take(it.id,q)}else await addBatch(it.id,q,it.buy,it.sell,w);
+ await post('stock_moves',mv(it.id,w,r.sign*q,'adjust',null,r.name))}
+const addRs=()=>post('reasons',{name:v('#rn'),sign:n('#rg')});
+async function applyInv(){for(const r of D.bal){const x=document.getElementById('q_'+r.item_id+'_'+r.wh_id);if(!x||x.value==='')continue;const d=+x.value-r.qty;if(!d)continue;
+ if(d<0)await take(r.item_id,-d);else await addBatch(r.item_id,d,r.buy,r.sell,r.wh_id);await post('stock_moves',mv(r.item_id,r.wh_id,d,'inventory'))}}
+const tpl=()=>{const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['name','wh_code','cat_code','buy','sell','min_qty','qty']]),'items');XLSX.writeFile(wb,'items_template.xlsx')};
+function upl(f){const rd=new FileReader();rd.onload=()=>go(async()=>{const rows=XLSX.utils.sheet_to_json(XLSX.read(rd.result).Sheets.items);
+ for(const r of rows){const w=D.wh.find(x=>x.code==String(r.wh_code).toUpperCase()),c=D.cat.find(x=>x.code==String(r.cat_code).toUpperCase());if(!w||!c)throw Error('كود مخزن/فئة غير معروف للصنف: '+r.name);
+  const it=(await post('items',{name:r.name,wh_id:w.id,cat_id:c.id,buy:r.buy||0,sell:r.sell||0,min_qty:r.min_qty??5}))[0];
+  if(r.qty>0){await post('stock_moves',mv(it.id,w.id,r.qty,'opening'));await addBatch(it.id,r.qty,it.buy,it.sell,w.id)}}});rd.readAsArrayBuffer(f.files[0])}
+
+async function showRep(){const t=v('#rt'),w=n('#rw'),f=v('#d1'),g=v('#d2');let rows,cols,title;const bw=D.bal.filter(x=>!w||x.wh_id==w);
+ if(t=='bal'){title='رصيد المخزون';rows=bw;cols={code:'الكود',name:'الصنف',cat:'الفئة',wh:'المخزن',qty:'الرصيد',buy:'سعر الشراء',sell:'سعر البيع',min_qty:'حد التنبيه'}}
+ if(t=='low'){title='أصناف قاربت على النفاذ';rows=bw.filter(x=>x.qty<=x.min_qty);cols={code:'الكود',name:'الصنف',wh:'المخزن',qty:'الرصيد',min_qty:'حد التنبيه'}}
+ if(t=='val'){title='جرد وتقييم المخزون';rows=bw.map(x=>({...x,vb:x.qty*x.buy,vs:x.qty*x.sell}));cols={code:'الكود',name:'الصنف',wh:'المخزن',qty:'الكمية',buy:'سعر الشراء',vb:'قيمة الشراء',vs:'قيمة البيع'}}
+ if(t=='mov'){title='حركة المخزون';rows=(await all('stock_moves?select=*,items(code,name),warehouses(name)&order=id.desc'+(w?'&wh_id=eq.'+w:'')+RG('created_at','d'))).map(x=>({...x,d:x.created_at.slice(0,16).replace('T',' '),nm:x.items.name,cd:x.items.code,wn:x.warehouses.name}));
+  cols={d:'التاريخ',cd:'الكود',nm:'الصنف',wn:'المخزن',qty:'الكمية (+/−)',kind:'النوع',note:'ملاحظة'}}
+ $('#rp').innerHTML=REP('w',title,rows,cols,x=>x.qty<=x.min_qty&&t!='mov'?'low':'')}
+function render(){const low=D.bal.filter(x=>x.qty<=x.min_qty&&x.qty>=0);
+ $('#app').innerHTML=`<datalist id="dl">${D.items.map(x=>`<option value="${x.code}">${x.name}</option>`).join('')}</datalist>`+
+ (low.length?`<section class="warn"><b>⚠ أصناف قاربت على النفاذ (${low.length}):</b> ${low.map(x=>x.name+' ('+x.qty+')').join('، ')}</section>`:'')+
+ SEC('مخزن وفئة رئيسية',`<div class="r">${F('wc','كود المخزن (حرف)','text','maxlength=1')}${F('wn','اسم المخزن')}<button onclick="go(addWh)">إضافة مخزن</button>${F('cc','كود الفئة (حرف)','text','maxlength=1')}${F('cn','اسم الفئة')}<button onclick="go(addCat)">إضافة فئة</button></div>${TB(D.wh,{code:'كود',name:'المخزن'})}${TB(D.cat,{code:'كود',name:'الفئة'})}`)+
+ SEC('عنصر جديد',`<div class="r">${F('in','الاسم')}${SL('iw','المخزن',D.wh)}${SL('ic','الفئة',D.cat)}${F('ib','سعر الشراء','number')}${F('is','سعر البيع','number')}${F('im','حد التنبيه (افتراضي 5)','number')}${F('iq','رصيد افتتاحي','number')}<button onclick="go(addItem)">إضافة</button></div>
+ <div class="r">${'<button class="g" onclick="tpl()">تحميل قالب Excel</button>'}<label>رفع ملف Excel<input type="file" accept=".xlsx" onchange="upl(this)"></label></div>
+ ${TB(D.items,{code:'الكود',name:'الاسم',buy:'شراء',sell:'بيع',min_qty:'حد التنبيه',e:['',x=>`<button class="g" onclick="edit(${x.id})">تعديل</button>`]})}`)+
+ SEC('نقل مخزون من مخزن إلى مخزن',`<div class="r">${F('ti','الصنف','text','list=dl')}${F('tq','الكمية','number')}${SL('tf','من',D.wh)}${SL('tt','إلى',D.wh)}<button onclick="go(xfer)">نقل</button></div>`)+
+ SEC('تغيير حالة مخزون (تالف / مسروق / ...)',`<div class="r">${F('ai','الصنف','text','list=dl')}${F('aq','الكمية','number')}${SL('aw','المخزن',D.wh)}<label>الحالة<select id="ar">${D.rs.map(r=>`<option value="${r.id}">${r.name} (${r.sign>0?'يزيد':'ينقص'})</option>`).join('')}</select></label><button onclick="go(adj)">تسجيل</button></div>
+ <div class="r">${F('rn','حالة جديدة')}<label>تأثيرها<select id="rg"><option value="-1">بالسالب (ينقص)</option><option value="1">بالموجب (يزيد)</option></select></label><button class="g" onclick="go(addRs)">إضافة حالة</button></div>`)+
+ SEC('جرد فعلي (اكتب الكمية الفعلية فقط للأصناف المراد تسويتها)',`${TB(D.bal,{code:'الكود',name:'الصنف',wh:'المخزن',qty:'رصيد النظام',a:['الكمية الفعلية',x=>`<input type="number" id="q_${x.item_id}_${x.wh_id}" style="min-width:80px">`]})}<button onclick="go(applyInv)">اعتماد الجرد وتسوية الفروق</button>`)+
+ SEC('التقارير',`<div class="r"><label>التقرير<select id="rt" onchange="showRep()"><option value="bal">رصيد المخزون</option><option value="low">النواقص</option><option value="val">جرد وتقييم</option><option value="mov">حركة المخزون</option></select></label>${SL('rw','المخزن',[{id:0,name:'الكل'},...D.wh])}${DR('d')}<button onclick="showRep()">عرض</button></div><div id="rp"></div>`);showRep()}
+boot('warehouses').then(async()=>{await load();render()});
+</script></body></html>

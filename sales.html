@@ -1,0 +1,62 @@
+<!DOCTYPE html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>المبيعات</title><link rel=stylesheet href=style.css><script src=https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js></script><script src=app.js></script></head><body><div id=nav></div><main id=app></main><script>
+let D={},L=[];
+async function load(){const [c,i,b,bt,si,w,ca]=await Promise.all([api('customers?order=id'),all('items?order=id'),all('stock_balance'),api('purchase_lines?remaining=gt.0&order=id&select=item_id,sell'),
+ api('sales_invoices?select=*,customers(name)&order=id.desc&limit=500'),api('warehouses?order=id'),api('categories?order=id')]);
+ D={cus:c,items:i,bal:b,bt:{},inv:si,wh:w,cat:ca};bt.forEach(x=>D.bt[x.item_id]??=x)}
+const FI=q=>D.items.find(x=>x.code==q||x.name==q),cp=it=>D.bt[it.id]?.sell??it.sell,avail=it=>sum(D.bal.filter(x=>x.item_id==it.id),x=>x.qty);
+const disc=()=>ST.allow_discount?n('#dc'):0,tot=()=>sum(L,l=>l.q*l.p);
+function pick(){const it=FI(v('#li'));if(it)$('#lp').value=cp(it)}
+function addL(){const it=FI(v('#li'));if(!it)return toast('الصنف غير موجود');const q=n('#lq'),ex=L.find(l=>l.it.id==it.id);
+ if(avail(it)<q+(ex?ex.q:0))return toast('الرصيد المتاح: '+avail(it));if(ex){ex.q+=q;ex.p=n('#lp')||ex.p}else L.push({it,q,p:n('#lp')||cp(it)});drawL()}
+function drawL(){const f=1-disc()/100,t=tot();$('#lt').innerHTML=TB(L.map((l,i)=>({...l,nm:l.it.name,t:l.q*l.p,i})),{nm:'الصنف',q:'الكمية',p:'السعر',t:'الإجمالي',x:['',r=>`<button class="g" onclick="L.splice(${r.i},1);drawL()">حذف</button>`]})+`<b>الإجمالي: ${fm(t)} — بعد الخصم: ${fm(t*f)}</b>`}
+async function saveSale(){if(!L.length)throw Error('أضف أصنافاً');const cn=v('#cn');if(!cn)throw Error('اسم العميل مطلوب');const via=v('#sm');if(via=='ext'&&!v('#sr'))throw Error('اكتب كود التحويل');
+ for(const l of L)if(avail(l.it)<l.q)throw Error('الرصيد غير كاف: '+l.it.name);
+ const c=await ENS('customers',cn,{phone:v('#cph')||null}),d=disc(),f=1-d/100,total=+(tot()*f).toFixed(2);
+ const inv=(await post('sales_invoices',{customer_id:c.id,discount_pct:d,total,mode:via}))[0];
+ for(const l of L){const {cost}=await take(l.it.id,l.q);await post('sales_lines',{inv_id:inv.id,item_id:l.it.id,qty:l.q,price:+(l.p*f).toFixed(4),cost});
+  let left=l.q;for(const b of D.bal.filter(x=>x.item_id==l.it.id&&x.qty>0).sort((a,b)=>b.qty-a.qty)){const t=Math.min(left,b.qty);if(t<=0)break;await post('stock_moves',mv(l.it.id,b.wh_id,-t,'sale',inv.id));left-=t}}
+ await PAY('in',via,total,{source:'sale',party:'C:'+c.id,inv_id:inv.id,note:'فاتورة بيع '+inv.id,ref:v('#sr')||null});L=[];window.LAST=inv.id}
+async function printInv(id){const [i]=await api('sales_invoices?select=*,customers(name,phone),sales_lines(qty,price,items(name))&id=eq.'+id);
+ PRINTDOC('فاتورة بيع رقم '+id,`العميل: ${i.customers.name} — التاريخ: ${i.date}${i.discount_pct>0?' — خصم '+i.discount_pct+'%':''}`,i.sales_lines.map(l=>({name:l.items.name,qty:l.qty,price:fm(l.price),tot:fm(l.qty*l.price)})),i.total)}
+async function loadSR(){const r=await api('sales_lines?select=*,items(name,wh_id)&order=id&inv_id=eq.'+n('#ri'));D.rl=r;
+ $('#rl').innerHTML=TB(r,{i:['الصنف',x=>x.items.name],qty:'الكمية',returned:'سبق إرجاعه',price:'السعر',z:['كمية المرتجع',x=>`<input type="number" min="0" max="${x.qty-x.returned}" id="rq${x.id}" value="0" style="min-width:80px">`]})}
+async function doSR(){const inv=n('#ri'),iv=D.inv.find(x=>x.id==inv);let t=0;const items=[];
+ for(const l of D.rl){const q=n('#rq'+l.id);if(q<=0)continue;if(q>l.qty-l.returned)throw Error('كمية المرتجع أكبر من المباعة');items.push([l,q]);t+=q*l.price}
+ if(!t)throw Error('حدد كمية المرتجع');const via=v('#rv');if(via=='ext'&&!v('#rr'))throw Error('اكتب كود التحويل');
+ const ret=(await post('sales_returns',{inv_id:inv,total:+t.toFixed(2)}))[0];
+ for(const [l,q] of items){await post('sales_return_lines',{ret_id:ret.id,line_id:l.id,item_id:l.item_id,qty:q,price:l.price,cost:l.cost});await patch('sales_lines','id=eq.'+l.id,{returned:l.returned+q});
+  await post('stock_moves',mv(l.item_id,l.items.wh_id,q,'sale_return',inv));await addBatch(l.item_id,q,l.cost,l.price,l.items.wh_id)}
+ await PAY('out',via,t,{source:'sale_return',party:'C:'+iv.customer_id,inv_id:inv,note:'مرتجع فاتورة بيع '+inv,ref:v('#rr')||null});$('#rl').innerHTML=''}
+async function autoWh(name,cname){let w=(await api('warehouses?name=eq.'+encodeURIComponent(name)))[0];
+ if(!w){const used=D.wh.map(x=>x.code);const c=[...'ZYXWVUTSRQPONMLKJIHGFEDCBA'].find(x=>!used.includes(x));w=(await post('warehouses',{code:c,name}))[0]}
+ let k=(await api('categories?name=eq.'+encodeURIComponent(cname)))[0];
+ if(!k){const used=D.cat.map(x=>x.code);const c=[...'ZYXWVUTSRQPONMLKJIHGFEDCBA'].find(x=>!used.includes(x));k=(await post('categories',{code:c,name:cname}))[0]}return[w,k]}
+async function saveCont(){const ty=v('#kt'),b=n('#kb'),s=n('#ks');if(!ty||!v('#kseller')||!v('#kbuyer'))throw Error('أكمل البيانات (النوع والبائع والمشتري)');
+ const [w,k]=await autoWh('كونتينر بيع مباشر','حاويات'),sel=await ENS('customers',v('#kseller'),{phone:v('#ksp')||null}),buy=await ENS('customers',v('#kbuyer'),{phone:v('#kbp')||null});
+ const inv=(await post('sales_invoices',{customer_id:buy.id,total:s,mode:v('#ksm'),kind:'container'}))[0];
+ const it=(await post('items',{name:ty+' #'+inv.id,wh_id:w.id,cat_id:k.id,buy:b,sell:s,min_qty:0}))[0];
+ await post('stock_moves',mv(it.id,w.id,1,'container_in',inv.id,'شراء من '+sel.name));await post('stock_moves',mv(it.id,w.id,-1,'container_out',inv.id,'بيع إلى '+buy.name));
+ await post('sales_lines',{inv_id:inv.id,item_id:it.id,qty:1,price:s,cost:b});await post('sales_containers',{inv_id:inv.id,ctype:ty,buy:b,sell:s,seller_id:sel.id,buyer_id:buy.id});
+ if(v('#kpm')!='none')await PAY('out',v('#kpm'),b,{source:'purchase',party:'C:'+sel.id,inv_id:inv.id,note:'شراء كونتينر فاتورة '+inv.id,ref:v('#kr')||null});
+ await PAY('in',v('#ksm'),s,{source:'sale',party:'C:'+buy.id,inv_id:inv.id,note:'بيع كونتينر فاتورة '+inv.id,ref:v('#kr')||null});window.LAST=inv.id}
+async function showRep(){const t=v('#rt'),cid=n('#rc'),f=v('#d1'),g=v('#d2');let rows,cols,title;const ok=x=>(!f||x.date>=f)&&(!g||x.date<=g);
+ if(t=='inv'){title='فواتير البيع';rows=D.inv.filter(x=>ok(x)&&(!cid||x.customer_id==cid)).map(x=>({...x,cn:x.customers.name,kd:x.kind=='container'?'كونتينر':'عادية',md:x.mode=='ext'?'تحويل':'خزينة',pb:`<button class="g" onclick="printInv(${x.id})">طباعة</button>`}));cols={id:'رقم',date:'التاريخ',cn:'العميل',kd:'النوع',discount_pct:'خصم %',total:'الإجمالي',md:'التحصيل',pb:'طباعة'}}
+ if(t=='itm'){title='المبيعات حسب الصنف';const l=await all('sales_lines?select=qty,price,cost,items(code,name),sales_invoices!inner(created_at,date)&order=id'+RG('sales_invoices.created_at','d')),o={};
+  l.forEach(x=>{const r=o[x.items.code]??={cd:x.items.code,nm:x.items.name,q:0,rev:0,cost:0};r.q+=x.qty;r.rev+=x.qty*x.price;r.cost+=x.qty*x.cost});rows=Object.values(o).map(r=>({...r,pf:r.rev-r.cost}));cols={cd:'الكود',nm:'الصنف',q:'الكمية المباعة',rev:'الإيراد',cost:'التكلفة',pf:'الربح'}}
+ if(t=='cus'){if(!cid)return toast('اختر العميل');title='كشف حساب عميل: '+D.cus.find(x=>x.id==cid).name;const [i,r]=await Promise.all([api('sales_invoices?customer_id=eq.'+cid+'&order=id'),api('sales_returns?select=*,sales_invoices!inner(customer_id)&sales_invoices.customer_id=eq.'+cid)]);
+  rows=[...i.map(x=>({d:x.date,t:'فاتورة بيع #'+x.id,a:x.total})),...r.map(x=>({d:x.date,t:'مرتجع فاتورة #'+x.inv_id,a:-x.total}))].sort((a,b)=>a.d<b.d?-1:1);cols={d:'التاريخ',t:'البيان',a:'القيمة'}}
+ if(t=='con'){title='فواتير الكونتينر المباشر';rows=(await api('sales_containers?select=*,sales_invoices(date),seller:customers!seller_id(name),buyer:customers!buyer_id(name)&order=id.desc')).map(x=>({...x,d:x.sales_invoices.date,sn:x.seller.name,bn:x.buyer.name,pf:x.sell-x.buy}));cols={inv_id:'فاتورة',d:'التاريخ',ctype:'النوع',sn:'اشتُري من',bn:'بيع إلى',buy:'سعر الشراء',sell:'سعر البيع',pf:'الربح'}}
+ if(t=='prf'){title='أرباح المبيعات';const [a,b]=isoRange(f,g),p=await PROFIT(a,b);$('#rp').innerHTML=REP('s',title,grp(p.recs,v('#gp')=='m'?7:10).concat([{d:'الإجمالي',sales:p.sales,cost:p.cost,gross:p.gross,exp:p.exp,net:p.net}]),PCOLS);return}
+ $('#rp').innerHTML=REP('s',title,rows,cols)}
+function render(){const dl=ST.allow_discount?`<label>خصم %<select id="dc" onchange="drawL()"><option value="0">بدون</option>${(ST.discounts||[]).map(x=>`<option>${x}</option>`).join('')}</select></label>`:'';
+ const invs=D.inv.map(x=>({id:x.id,n:'#'+x.id+' — '+x.customers.name+' — '+x.total}));
+ $('#app').innerHTML=`<datalist id="dl">${D.items.map(x=>`<option value="${x.code}">${x.name} (${fm(avail(x))})</option>`).join('')}</datalist><datalist id="cl">${D.cus.map(x=>`<option value="${x.name}">`).join('')}</datalist>`+
+ (window.LAST?SEC('تمت الفاتورة رقم '+LAST,`<button onclick="printInv(${LAST})">طباعة الفاتورة</button>`):'')+
+ SEC('فاتورة بيع',`<div class="r">${F('cn','العميل (جديد يُضاف بكود تلقائي)','text','list=cl')}${F('cph','هاتف (اختياري)')}${dl}<label>التحصيل<select id="sm"><option value="cash">إلى الخزينة</option><option value="ext">تحويل خارجي</option></select></label>${F('sr','كود التحويل')}</div>
+ <div class="r">${F('li','الصنف (اكتب الاسم أو الكود)','text','list=dl onchange="pick()"')}${F('lq','العدد','number','value=1')}${F('lp','السعر','number')}<button onclick="addL()">إضافة</button></div><div id="lt"></div><button onclick="go(saveSale)">تنفيذ الفاتورة</button>`)+
+ SEC('فاتورة بيع كونتينر مباشرة',`<div class="r">${F('kt','نوع الكونتينر')}${F('kb','سعر الشراء','number')}${F('ks','سعر البيع','number')}</div><div class="r">${F('kseller','اشتُري من (عميل)','text','list=cl')}${F('ksp','هاتفه')}${F('kbuyer','المشتري (عميل)','text','list=cl')}${F('kbp','هاتفه')}
+ <label>دفع ثمن الشراء<select id="kpm"><option value="cash">من الخزينة</option><option value="ext">تحويل</option><option value="none">لا يُسجّل</option></select></label><label>تحصيل ثمن البيع<select id="ksm"><option value="cash">إلى الخزينة</option><option value="ext">تحويل</option></select></label>${F('kr','كود التحويل')}<button onclick="go(saveCont)">تنفيذ</button></div>`)+
+ SEC('مرتجع فاتورة بيع',`<div class="r">${SL('ri','الفاتورة',invs,'n')}<button class="g" onclick="loadSR()">عرض الأصناف</button></div><div id="rl"></div><div class="r"><label>رد المبلغ<select id="rv"><option value="cash">من الخزينة</option><option value="ext">تحويل</option></select></label>${F('rr','كود التحويل')}<button onclick="go(doSR)">تنفيذ المرتجع</button></div>`)+
+ SEC('التقارير',`<div class="r"><label>التقرير<select id="rt" onchange="showRep()"><option value="inv">فواتير البيع</option><option value="itm">حسب الصنف</option><option value="cus">كشف حساب عميل</option><option value="con">فواتير الكونتينر</option><option value="prf">الأرباح</option></select></label>${SL('rc','العميل',[{id:0,name:'الكل'},...D.cus])}<label>التجميع<select id="gp"><option value="d">يومي</option><option value="m">شهري</option></select></label>${DR('d')}<button onclick="showRep()">عرض</button></div><div id="rp"></div>`);drawL();showRep()}
+boot('sales').then(async()=>{await load();render()});
+</script></body></html>
