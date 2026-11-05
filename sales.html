@@ -51,7 +51,7 @@ async function showRep(){const t=v('#rt'),cid=n('#rc'),f=v('#d1'),g=v('#d2');let
 function render(){const dl=ST.allow_discount?`<label>خصم %<select id="dc" onchange="drawL()"><option value="0">بدون</option>${(ST.discounts||[]).map(x=>`<option>${x}</option>`).join('')}</select></label>`:'';
  const invs=D.inv.map(x=>({id:x.id,n:'#'+x.id+' — '+x.customers.name+' — '+x.total}));
  $('#app').innerHTML=`<datalist id="dl">${D.items.map(x=>`<option value="${x.code}">${x.name} (${fm(avail(x))})</option>`).join('')}</datalist><datalist id="cl">${D.cus.map(x=>`<option value="${x.name}">`).join('')}</datalist>`+
- (window.LAST?SEC('تمت الفاتورة رقم '+LAST,`<button onclick="printInv(${LAST})">طباعة الفاتورة</button>`):'')+
+ (window.LAST?`<section class="ok">تمت الفاتورة رقم ${LAST} <button onclick="printInv(${LAST})">طباعة الفاتورة</button></section>`:'')+
  SEC('فاتورة بيع',`<div class="r">${F('cn','العميل (جديد يُضاف بكود تلقائي)','text','list=cl')}${F('cph','هاتف (اختياري)')}${dl}<label>التحصيل<select id="sm"><option value="cash">إلى الخزينة</option><option value="ext">تحويل خارجي</option></select></label>${F('sr','كود التحويل')}</div>
  <div class="r">${F('li','الصنف (اكتب الاسم أو الكود)','text','list=dl onchange="pick()"')}${F('lq','العدد','number','value=1')}${F('lp','السعر','number')}<button onclick="addL()">إضافة</button></div><div id="lt"></div><button onclick="go(saveSale)">تنفيذ الفاتورة</button>`)+
  SEC('فاتورة بيع كونتينر مباشرة',`<div class="r">${F('kt','نوع الكونتينر')}${F('kb','سعر الشراء','number')}${F('ks','سعر البيع','number')}</div><div class="r">${F('kseller','اشتُري من (عميل)','text','list=cl')}${F('ksp','هاتفه')}${F('kbuyer','المشتري (عميل)','text','list=cl')}${F('kbp','هاتفه')}
