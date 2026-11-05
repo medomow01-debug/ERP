@@ -1,20 +1,24 @@
 <!DOCTYPE html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>الإعدادات</title><link rel=stylesheet href=style.css><script src=https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js></script><script src=app.js></script></head><body><div id=nav></div><main id=app></main><script>
 let D={};
-async function load(){D.u=S.role=='admin'?await rpc('app_users_list'):[]}
+async function load(){D.u=ISADM()?await rpc('app_users_list'):[]}
 const PG=NAV.filter(x=>x[0]!='index');
 const saveSt=()=>patch('settings','id=eq.1',{company:v('#co'),phone:v('#cp'),address:v('#ca'),theme:v('#th'),allow_discount:$('#ad').checked,discounts:v('#dsc').split(',').map(x=>+x.trim()).filter(x=>x>0&&x<=100)});
 async function chPass(){if(v('#a')!=v('#b'))throw Error('التأكيد غير مطابق');if(!await rpc('app_change_pass',{o:v('#o'),n:v('#a')}))throw Error('كلمة المرور الحالية غير صحيحة')}
 function editU(id){const u=D.u.find(x=>x.id==id)||{};$('#uid').value=u.id||'';$('#un').value=u.username||'';$('#un').disabled=!!u.id;$('#unm').value=u.name||'';$('#ur').value=u.role||'employee';$('#ua').checked=u.active!==false;$('#up').value='';
- document.querySelectorAll('.pm').forEach(c=>c.checked=(u.perms||[]).includes(c.value))}
+ document.querySelectorAll('.pm').forEach(c=>c.checked=(u.perms||[]).includes(c.value));$('#uf').scrollIntoView({behavior:'smooth'})}
 async function saveU(){const id=v('#uid'),j={id:id?+id:null,username:v('#un'),name:v('#unm'),role:v('#ur'),active:$('#ua').checked,password:v('#up'),perms:[...document.querySelectorAll('.pm:checked')].map(x=>x.value)};
  if(!j.id&&(!j.username||!j.password))throw Error('اسم المستخدم وكلمة المرور مطلوبان');await rpc('app_user_save',{j})}
-function render(){const ad=S.role=='admin';
- $('#app').innerHTML=(ad?SEC('بيانات الشركة والنظام (تظهر في الفواتير والتقارير)',`<div class="r">${F('co','اسم الشركة','text','value="'+(ST.company||'')+'"')}${F('cp','الهاتف','text','value="'+(ST.phone||'')+'"')}${F('ca','العنوان','text','value="'+(ST.address||'')+'"')}${F('th','لون النظام','color','value="'+(ST.theme||'#0f766e')+'"')}</div>
- <div class="r"><label class="ck"><input type="checkbox" id="ad" ${ST.allow_discount?'checked':''}> تفعيل الخصم في فواتير البيع</label>${F('dsc','نسب الخصم المتاحة (مفصولة بفاصلة)','text','value="'+(ST.discounts||[]).join(',')+'"')}<button onclick="go(saveSt)">حفظ</button></div>`):'')+
- SEC('تغيير كلمة المرور',`<div class="r">${F('o','الحالية','password')}${F('a','الجديدة','password')}${F('b','تأكيد','password')}<button onclick="go(chPass)">تغيير</button></div>`)+
- (ad?SEC('الموظفون والصلاحيات',`${TB(D.u,{username:'المستخدم',name:'الاسم',role:'الدور',perms:['الصلاحيات',x=>x.role=='admin'?'الكل':x.perms.map(p=>PG.find(g=>g[0]==p)?.[1]).join('، ')],a:['الحالة',x=>x.active?'نشط':'موقوف'],e:['',x=>`<button class="g" onclick="editU(${x.id})">تعديل</button>`]})}
- <h3>مستخدم (اتركه فارغاً لإنشاء جديد)</h3><input type="hidden" id="uid"><div class="r">${F('un','اسم المستخدم')}${F('unm','الاسم')}${F('up','كلمة المرور (فارغ = بدون تغيير)','password')}<label>الدور<select id="ur"><option value="employee">موظف</option><option value="admin">مدير</option></select></label><label class="ck"><input type="checkbox" id="ua" checked> نشط</label></div>
- <div class="r">${PG.map(([k,t])=>`<label class="ck"><input type="checkbox" class="pm" value="${k}">${t}</label>`).join('')}</div><button onclick="go(saveU)">حفظ المستخدم</button> <button class="g" onclick="editU(0)">مستخدم جديد</button>
- <p><small>عند إنشاء مستخدم أو تغيير كلمة مروره يُطلب منه تعيين كلمة مرور جديدة عند أول دخول.</small></p>`):'')}
+function resetDlg(){MODAL(`<h2 style="color:var(--bad)">إعادة تهيئة النظام</h2><p>سيتم <b>حذف كل البيانات نهائياً</b>: المخازن والأصناف والمشتريات والمبيعات والخزينة والشركاء والأرباح والسندات. تبقى حسابات المستخدمين والإعدادات فقط. <b>لا يمكن التراجع.</b></p>
+ ${FG(F('rpw','أدخل كلمة مرور المدير للتأكيد','password')+F('rtx','اكتب كلمة «حذف» للتأكيد'))}${ACT(`<button class="d" onclick="doReset()">حذف كل شيء</button><button class="g" onclick="closeModal()">إلغاء</button>`)}`)}
+async function doReset(){try{if(v('#rtx')!='حذف')return toast('خطأ: اكتب كلمة «حذف» للتأكيد');await rpc('app_reset',{p:v('#rpw')});closeModal();toast('تمت إعادة تهيئة النظام');setTimeout(()=>location='index.html',1200)}catch(e){toast('خطأ: '+e.message)}}
+function render(){const ad=ISADM();
+ $('#app').innerHTML=(ad?SEC('بيانات الشركة',`<p class="hint">تظهر هذه البيانات على الفواتير والتقارير</p>${FG(F('co','اسم الشركة','text','value="'+esc(ST.company||'')+'"')+F('cp','رقم الهاتف','text','value="'+esc(ST.phone||'')+'"')+F('ca','العنوان','text','value="'+esc(ST.address||'')+'"'))}${ACT('<button onclick="go(saveSt)">حفظ</button>')}`,'co')+
+ SEC('المظهر والخصم',`${FG(F('th','لون النظام','color','value="'+(ST.theme||'#0f766e')+'" style="height:44px;padding:4px"')+F('dsc','نسب الخصم المتاحة في البيع (مفصولة بفاصلة)','text','value="'+(ST.discounts||[]).join(',')+'"'))}<label class="ck"><input type="checkbox" id="ad" ${ST.allow_discount?'checked':''}> تفعيل الخصم في فواتير البيع</label>${ACT('<button onclick="go(saveSt)">حفظ</button>')}`,'look'):'')+
+ SEC('كلمة المرور',`${FG(F('o','الحالية','password')+F('a','الجديدة','password')+F('b','تأكيد الجديدة','password'))}${ACT('<button onclick="go(chPass)">تغيير كلمة المرور</button>')}`,'pw')+
+ (ad?SEC('الموظفون والصلاحيات',`${TB(D.u,{username:'المستخدم',name:'الاسم',role:['الدور',x=>x.role=='admin'?BD('مدير','ok'):BD('موظف')],perms:['الصلاحيات',x=>x.role=='admin'?'الكل':esc(x.perms.map(p=>PG.find(g=>g[0]==p)?.[1]).join('، '))],a:['الحالة',x=>x.active?BD('نشط','ok'):BD('موقوف','bad')],e:['',x=>`<button class="g s" onclick="editU(${x.id})">تعديل</button>`]})}
+ <div id="uf">${HR('إنشاء / تعديل مستخدم')}<input type="hidden" id="uid">${FG(F('un','اسم المستخدم')+F('unm','الاسم')+F('up','كلمة المرور (فارغ = بدون تغيير)','password')+'<label>الدور<select id="ur"><option value="employee">موظف</option><option value="admin">مدير</option></select></label>')}
+ <label class="ck"><input type="checkbox" id="ua" checked> الحساب نشط</label>${HR('الصفحات المسموحة')}<div class="act">${PG.map(([k,t])=>`<label class="ck"><input type="checkbox" class="pm" value="${k}">${t}</label>`).join('')}</div>
+ ${ACT('<button onclick="go(saveU)">حفظ المستخدم</button><button class="g" onclick="editU(0)">مستخدم جديد</button>')}<p class="hint">عند إنشاء مستخدم أو تغيير كلمة مروره يُطلب منه تعيين كلمة مرور جديدة عند أول دخول.</p></div>`,'users')+
+ SEC('إعادة تهيئة النظام',`<p>حذف جميع بيانات النظام والبدء من جديد. يتطلب تأكيد كلمة مرور المدير.</p>${ACT('<button class="d" onclick="resetDlg()">إعادة تهيئة النظام…</button>')}`,'reset'):'')}
 boot('settings').then(async()=>{await load();render()});
 </script></body></html>

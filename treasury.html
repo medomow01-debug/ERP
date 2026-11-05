@@ -1,26 +1,45 @@
 <!DOCTYPE html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>الخزينة</title><link rel=stylesheet href=style.css><script src=https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js></script><script src=app.js></script></head><body><div id=nav></div><main id=app></main><script>
 let D={};
-async function load(){const [t,tr,sh]=await Promise.all([all('treasury_tx?select=*,partners(name)&order=id.desc'),all('transfers?order=id.desc'),all('transfer_shares?select=*,partners(name)&order=id.desc')]);D={t,tr,sh}}
+async function load(){const [t,tr,py]=await Promise.all([all('treasury_tx?select=*,partners(name)&order=id.desc'),all('transfers?order=id.desc'),api('payees?order=id')]);D={t,tr,py}}
 const bal=()=>sum(D.t,x=>x.kind=='in'?x.amount:-x.amount),tbal=()=>sum(D.tr,x=>x.dir=='in'?x.amount:-x.amount);
-async function payout(){const ty=v('#pt'),a=n('#pa'),via=v('#pv');if(a<=0)throw Error('المبلغ غير صحيح');
- if(via=='cash'&&a>bal()&&!confirm('المبلغ أكبر من رصيد الخزينة. متابعة؟'))return;
- if(via=='ext'&&!v('#pr'))throw Error('اكتب كود التحويل / نوع التطبيق');
- const m={source:ty=='g'?'general':ty=='a'?'admin_pay':'partner_pay',payee:v('#pe')||null,note:v('#pn')||null,ref:v('#pr')||null};
- if(ty=='p'){const p=n('#pp');if(!p)throw Error('اختر الشريك');m.partner_id=p;await post('partner_ledger',{partner_id:p,kind:v('#pk'),amount:a,period_id:CUR?.id,note:m.note||'مدفوعات للشريك'})}
- await PAY('out',via,a,m,ty=='p'?[]:GSH('sh'))}
-async function income(){const a=n('#ia'),via=v('#iv');if(a<=0)throw Error('المبلغ غير صحيح');if(via=='ext'&&!v('#ir'))throw Error('اكتب كود التحويل');
- await PAY('in',via,a,{source:'other_income',note:v('#in')||'إيراد',ref:v('#ir')||null})}
-const SRC={sale:'مبيعات',purchase:'مشتريات',general:'مصروف عام',admin_pay:'دفع لإداري',partner:'إيداع شريك',partner_pay:'مدفوعات لشريك',other_income:'إيراد آخر',purchase_refund:'استرداد مشتريات',sale_return:'مرتجع مبيعات',profit_pay:'صرف أرباح',capital_pay:'صرف رأس مال',partner_exit:'فض شراكة'};
-function showRep(){const t=v('#rt'),f=v('#d1'),g=v('#d2'),ok=x=>(!f||x.date>=f)&&(!g||x.date<=g);let rows,cols,title;
- if(t=='tx'){title='حركة الخزينة';rows=D.t.filter(ok).map(x=>({...x,k:x.kind=='in'?'وارد':'صادر',s:SRC[x.source]||x.source,p:x.partners?.name||x.payee||''}));cols={date:'التاريخ',k:'النوع',s:'البند',p:'الجهة',amount:'المبلغ',note:'ملاحظة'}}
- if(t=='tr'){title='حركة التحويلات';rows=D.tr.filter(ok).map(x=>({...x,k:x.dir=='in'?'وارد':'صادر',s:SRC[x.source]||x.source,sh:D.sh.filter(y=>y.transfer_id==x.id).map(y=>y.partners.name+': '+y.amount).join('، ')||'عام'}));cols={date:'التاريخ',k:'النوع',s:'البند',amount:'المبلغ',ref:'كود/تطبيق التحويل',sh:'توزيع الشركاء',note:'ملاحظة'}}
- if(t=='exp'){title='ملخص المصروفات';const e=D.t.filter(x=>ok(x)&&x.kind=='out').map(x=>({s:x.source,a:x.amount,w:'خزينة'})).concat(D.tr.filter(x=>ok(x)&&x.dir=='out').map(x=>({s:x.source,a:x.amount,w:'تحويل'})));
-  const o={};e.forEach(x=>{const k=x.s+x.w;o[k]??={s:SRC[x.s]||x.s,w:x.w,a:0};o[k].a+=x.a});rows=Object.values(o);cols={s:'البند',w:'المصدر',a:'الإجمالي'}}
- $('#rp').innerHTML=REP('t',title,rows,cols)}
-function render(){$('#app').innerHTML=`<div class="cards"><div>رصيد الخزينة<b>${fm(bal())}</b></div><div>رصيد التحويلات<b>${fm(tbal())}</b></div><div>إجمالي المتاح<b>${fm(bal()+tbal())}</b></div></div><br>`+
- SEC('مدفوعات / تحويل عام',`<div class="r"><label>النوع<select id="pt"><option value="g">مصروف عام</option><option value="a">دفع لإداري</option><option value="p">دفع لشريك</option></select></label>${F('pe','المستلم (اسم الإداري / الجهة)')}${SL('pp','الشريك (عند الدفع لشريك)',[{id:0,name:'—'},...PT])}
- <label>يُخصم من حساب الشريك<select id="pk"><option value="payout">الأرباح</option><option value="capital_out">رأس المال</option></select></label>${F('pa','المبلغ','number')}<label>الدفع<select id="pv"><option value="cash">من الخزينة</option><option value="ext">تحويل خارجي</option></select></label>${F('pr','كود/تطبيق التحويل')}${F('pn','ملاحظة')}</div>${SHR('sh')}<button onclick="go(payout)">تنفيذ</button>`)+
- SEC('تسجيل إيراد آخر',`<div class="r">${F('ia','المبلغ','number')}<label>الاستلام<select id="iv"><option value="cash">إلى الخزينة</option><option value="ext">تحويل وارد</option></select></label>${F('ir','كود التحويل')}${F('in','ملاحظة')}<button onclick="go(income)">تسجيل</button></div>`)+
- SEC('التقارير',`<div class="r"><label>التقرير<select id="rt" onchange="showRep()"><option value="tx">حركة الخزينة</option><option value="tr">حركة التحويلات</option><option value="exp">ملخص المصروفات</option></select></label>${DR('d')}<button onclick="showRep()">عرض</button></div><div id="rp"></div>`);showRep()}
+const SRC={sale:'مبيعات',purchase:'مشتريات',general:'مصروف عام',admin_pay:'دفع لإداري / مستلم',partner:'إيداع / مساهمة شريك',partner_pay:'مدفوعات لشريك',other_income:'إيراد آخر',purchase_refund:'استرداد مشتريات',sale_return:'مرتجع مبيعات',profit_pay:'صرف أرباح',capital_pay:'صرف رأس مال',partner_exit:'فض شراكة'};
+const KD={employee:'موظف',admin:'إداري',external:'شخص خارجي'};
+function ptx(){const t=v('#pt');$('#bp').hidden=t!='p';$('#ba2').hidden=t!='a'}
+async function payout(){const ty=v('#pt'),a=n('#pa');if(a<=0)throw Error('المبلغ غير صحيح');if(!v('#pn'))throw Error('اكتب بيان الدفع (مطلوب)');const pv=PMV('x');
+ if(ty=='p'&&pv.via=='contrib')throw Error('الدفع لشريك يكون من الخزينة أو بتحويل');
+ if(pv.via=='cash'&&a>await treasuryBal()&&!confirm('المبلغ أكبر من رصيد الخزينة الحالي. هل تريد المتابعة؟'))return false;
+ const m={source:ty=='g'?'general':ty=='a'?'admin_pay':'partner_pay',note:v('#pn'),ref:pv.ref};
+ if(ty=='a'){if(!v('#pe'))throw Error('حدد المستلم أو اكتب اسمه');const p=await ENP(v('#pe'),v('#pk2'));m.payee=p.name;m.payee_id=p.id}
+ const pid=n('#pp');if(ty=='p'){if(!pid)throw Error('اختر الشريك');m.partner_id=pid}
+ const t=await PAY('out',pv.via,a,m,pv.shares);
+ if(ty=='p'){await post('partner_ledger',{partner_id:pid,kind:v('#pk'),amount:a,period_id:CUR.id,note:m.note,...(pv.via=='ext'?{tr_id:t.id}:{tx_id:t.id})});
+  await post('vouchers',{kind:v('#pk')=='payout'?'صرف أرباح':'صرف رأس مال',partner_id:pid,amount:a,details:m.note})}}
+async function income(){const a=n('#ia');if(a<=0)throw Error('المبلغ غير صحيح');if(!v('#in2'))throw Error('اكتب بيان الإيراد (مطلوب)');const pv=PMV('i');await PAY('in',pv.via,a,{source:'other_income',note:v('#in2'),ref:pv.ref})}
+const addPayee=()=>{if(!v('#yn'))throw Error('الاسم مطلوب');return post('payees',{name:v('#yn'),phone:v('#yp'),kind:v('#yk')})};
+const delTx=(tb,id)=>{if(!confirm('حذف هذه المعاملة نهائياً؟ سيتأثر رصيد الخزينة/التحويلات تلقائياً.'))return false;return del(tb,'id=eq.'+id)};
+function showRep(){const t=v('#rt'),fr=FR(),k=v('#rk'),s=v('#rsrc'),pid=n('#rpt');
+ let rows=D.t.map(x=>({tb:'treasury_tx',id:x.id,ts:x.created_at,date:x.date,w:'خزينة',dir:x.kind,src:x.source,party:x.partners?.name||x.payee||'',pid:x.partner_id,amount:x.amount,note:x.note,ref:x.ref}))
+  .concat(D.tr.map(x=>({tb:'transfers',id:x.id,ts:x.created_at,date:x.date,w:'تحويل',dir:x.dir,src:x.source,party:x.payee||'',pid:null,amount:x.amount,note:x.note,ref:x.ref})));
+ rows=rows.filter(x=>inR({created_at:x.ts},fr)&&(!k||x.dir==k)&&(!s||x.src==s)&&(!pid||x.pid==pid)).sort((a,b)=>new Date(b.ts)-new Date(a.ts));
+ if(t=='tx')rows=rows.filter(x=>x.w=='خزينة');if(t=='tf')rows=rows.filter(x=>x.w=='تحويل');if(t=='dep')rows=rows.filter(x=>x.src=='partner'&&x.dir=='in');if(t=='exp')rows=rows.filter(x=>x.dir=='out'&&!['purchase','partner_pay','profit_pay','capital_pay','partner_exit','sale_return'].includes(x.src));
+ const inn=sum(rows.filter(x=>x.dir=='in'),x=>x.amount),outt=sum(rows.filter(x=>x.dir=='out'),x=>x.amount),dep=sum(rows.filter(x=>x.src=='partner'&&x.dir=='in'),x=>x.amount);
+ const T={all:'كل الحركات',tx:'حركة الخزينة',tf:'حركة التحويلات',dep:'إيداعات الشركاء',exp:'المصروفات',sum:'ملخص حسب البند'}[t];let cols,o;
+ const sub=SUMC([['إجمالي الوارد',inn,'ok'],['إجمالي الصادر',outt,'bad'],['الصافي',inn-outt],['إيداعات الشركاء',dep]]);
+ if(t=='sum'){const g={};rows.forEach(x=>{const key=x.src+x.w+x.dir,r=g[key]??={src:SRC[x.src]||x.src,w:x.w,dir:x.dir=='in'?'وارد':'صادر',n:0,amount:0};r.n++;r.amount+=x.amount});
+  cols={src:'البند',w:'المصدر',dir:'النوع',n:'عدد الحركات',amount:'الإجمالي'};o={num:['n','amount'],tot:['n','amount'],sub};$('#rp').innerHTML=REP('t',T,Object.values(g),cols,o);return}
+ rows=rows.map(x=>({...x,dl:x.dir=='in'?BD('وارد','ok'):BD('صادر','bad'),sl:SRC[x.src]||x.src}));
+ cols={id:'#',date:'التاريخ',w:'المصدر',dl:'النوع',sl:'البند',party:'الجهة / الشريك / المستلم',amount:'المبلغ',note:'البيان',ref:'كود التحويل',a:['',x=>ISADM()?`<button class="d s" onclick="go(()=>delTx('${x.tb}',${x.id}))">حذف</button>`:'']};
+ o={num:['amount'],tot:['amount'],sub};$('#rp').innerHTML=REP('t',T,rows,cols,o)}
+function render(){const h=location.hash.split(':')[1];
+ $('#app').innerHTML=`<datalist id="pl">${D.py.map(x=>`<option value="${esc(x.name)}">${esc(x.code)} — ${KD[x.kind]||''}</option>`).join('')}</datalist><div class="cards"><div>رصيد الخزينة<b>${fm(bal())}</b></div><div>رصيد التحويلات<b>${fm(tbal())}</b></div><div>إجمالي المتاح<b>${fm(bal()+tbal())}</b></div></div>`+
+ SEC('مدفوعات',`${FG(`<label>نوع الدفع<select id="pt" onchange="ptx()"><option value="g">مصروف عام</option><option value="a">دفع لإداري / موظف / مستلم</option><option value="p">دفع لشريك</option></select></label>${F('pa','المبلغ','number','step=any')}${F('pn','البيان (مطلوب — يظهر في التقارير)')}`)}
+ <div id="ba2" class="fg" hidden>${F('pe','المستلم (اختر من المسجلين أو اكتب اسماً جديداً)','text','list=pl')}<label>إن كان جديداً فهو<select id="pk2"><option value="admin">إداري</option><option value="employee">موظف</option><option value="external">شخص خارجي</option></select></label></div>
+ <div id="bp" class="fg" hidden>${SL('pp','الشريك',PT)}<label>يُخصم من حساب الشريك<select id="pk"><option value="payout">الأرباح</option><option value="capital_out">رأس المال</option></select></label></div>
+ ${FG(PM('x'))}${ACT('<button onclick="go(payout)">تنفيذ الدفع</button>')}`,'pay')+
+ SEC('إيرادات أخرى',`${FG(F('ia','المبلغ','number','step=any')+F('in2','البيان (مطلوب)')+PM('i',['cash','ext'],'طريقة الاستلام',true))}${ACT('<button onclick="go(income)">تسجيل الإيراد</button>')}`,'inc')+
+ SEC('الإداريون والمستلمون',`${FG(F('yn','الاسم')+F('yp','الهاتف')+'<label>النوع<select id="yk"><option value="admin">إداري</option><option value="employee">موظف</option><option value="external">شخص خارجي</option></select></label>'+ACT('<button onclick="go(addPayee)">إضافة</button>'))}${TB(D.py,{code:'الكود',name:'الاسم',phone:'الهاتف',k:['النوع',x=>KD[x.kind]||x.kind],t:['إجمالي ما دُفع له',x=>fm(sum(D.t.filter(t=>t.payee_id==x.id),t=>t.amount))]})}`,'payees')+
+ SEC('التقارير',`${FBAR(`<label>التقرير<select id="rt"><option value="all">كل الحركات</option><option value="tx">حركة الخزينة</option><option value="tf">حركة التحويلات</option><option value="dep">إيداعات الشركاء</option><option value="exp">المصروفات (بالتفصيل)</option><option value="sum">ملخص حسب البند</option></select></label>
+ <label>نوع الحركة<select id="rk"><option value="">وارد وصادر</option><option value="in">وارد فقط</option><option value="out">صادر فقط</option></select></label><label>البند<select id="rsrc"><option value="">كل البنود</option>${Object.entries(SRC).map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select></label>${SL('rpt','الشريك',[{id:0,name:'كل الشركاء'},...PT])}`)}<div id="rp"></div>`,'rep');
+ ptx();pmx('x');pmx('i');if(h&&$('#rt'))$('#rt').value=h;showRep()}
 boot('treasury').then(async()=>{await load();render()});
 </script></body></html>
