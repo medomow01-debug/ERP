@@ -47,11 +47,13 @@ function tabify(){const m=$('#app');if(m.querySelector(':scope>.tabs'))return;co
 const F=(id,l,t='text',x='')=>`<label>${l}<input id="${id}" type="${t}" ${x}></label>`;
 const OP=(rows,k='name')=>rows.map(r=>`<option value="${r.id}">${esc(r[k])}</option>`).join('');
 const SL=(id,l,rows,k='name',x='')=>`<label>${l}<select id="${id}" ${x}>${OP(rows,k)}</select></label>`;
-const FG=h=>`<div class="fg">${h}</div>`,ACT=h=>`<div class="act">${h}</div>`,HR=t=>`<h4 class="sub">${t}</h4>`;
-const SEC=(t,b,i='')=>`<section data-t="${t}" ${i?`id="${i}"`:''}><h3>${t}</h3>${b}</section>`;
+const FG=h=>`<div class="fg">${h}</div>`,ACT=h=>`<div class="act np">${h}</div>`,HR=t=>`\u0001${t}\u0002`;
+const SEC=(t,b,i='')=>{const ps=String(b).split('\u0001'),cs=[];if(ps[0].trim())cs.push(`<div class="card"><div class="card-b">${ps[0]}</div></div>`);
+ ps.slice(1).forEach(p=>{const [h,...r]=p.split('\u0002');cs.push(`<div class="card"><div class="card-h">${h}</div><div class="card-b">${r.join('\u0002')}</div></div>`)});
+ return `<section data-t="${t}" ${i?`id="${i}"`:''}><h3>${t}</h3>${cs.join('')}</section>`};
 const BD=(t,c='info')=>`<span class="bd ${c}">${t}</span>`;
 const EMPTY=t=>`<div class="empty">${t}</div>`;
-const cell=(r,k,c)=>Array.isArray(c)?c[1](r):esc(r[k]??''),lab=c=>Array.isArray(c)?c[0]:c;
+const RAW=/^\s*<(span|b|i|button|small|a)\b/,cell=(r,k,c)=>{if(Array.isArray(c))return c[1](r);const x=r[k]??'';return RAW.test(String(x))?x:esc(x)},lab=c=>Array.isArray(c)?c[0]:c;
 const TB=(rows,cols,cls)=>rows.length?`<div class="sc"><table><thead><tr>${Object.values(cols).map(c=>`<th>${lab(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr class="${cls?cls(r):''}">${Object.entries(cols).map(([k,c])=>`<td>${cell(r,k,c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:EMPTY('لا توجد بيانات');
 function MODAL(html){let m=$('#modal');if(!m){m=document.createElement('div');m.id='modal';document.body.append(m)}m.className='modal';m.hidden=false;m.onclick=closeModal;
  m.innerHTML=`<div class="sheet" onclick="event.stopPropagation()"><button class="x g np" onclick="closeModal()">✕</button>${html}</div>`}
@@ -69,18 +71,19 @@ function rrows(id){const {rows,cols,flt,q}=R[id];return rows.filter(r=>{
   if(m){const a=parseFloat(t.replace(/,/g,'')),b=+m[2];if(!(m[1]=='>'?a>b:m[1]=='>='?a>=b:m[1]=='<'?a<b:a<=b))return false}else if(!t.toLowerCase().includes(f.toLowerCase()))return false}
  return !q||Object.entries(cols).some(([k,c])=>rtxt(r,k,c).toLowerCase().includes(q))})}
 function rbody(id){const o=R[id],rs=rrows(id),ks=Object.keys(o.cols).filter(k=>!o.hide.has(k)),num=o.o.num||o.o.tot||[],tot=o.o.tot||[];
- const body=rs.map(r=>`<tr class="${o.o.cls?o.o.cls(r):''}">${ks.map(k=>`<td class="${num.includes(k)?'n':''}">${cell(r,k,o.cols[k])}</td>`).join('')}</tr>`).join('')||`<tr><td colspan="${ks.length}" class="empty">لا توجد بيانات مطابقة</td></tr>`;
+ const body=rs.map(r=>`<tr class="${o.o.cls?o.o.cls(r):''}">${ks.map(k=>`<td class="${num.includes(k)?'n':['note','details','t','n','pn','party','src','sl'].includes(k)?'wr':''}">${cell(r,k,o.cols[k])}</td>`).join('')}</tr>`).join('')||`<tr><td colspan="${ks.length}" class="empty">لا توجد بيانات مطابقة</td></tr>`;
  const foot=tot.length?`<tr>${ks.map((k,i)=>`<td class="n">${tot.includes(k)?fm(sum(rs,r=>parseFloat(rtxt(r,k,o.cols[k]).replace(/,/g,''))||0)):i==0?'الإجمالي ('+rs.length+')':''}</td>`).join('')}</tr>`:`<tr><td colspan="${ks.length}" class="cnt">${rs.length} سجل</td></tr>`;
  return{body,foot}}
-function rtab(id){const o=R[id],ks=Object.keys(o.cols).filter(k=>!o.hide.has(k)),b=rbody(id);
- return `<div class="sc"><table><thead><tr>${ks.map(k=>`<th>${lab(o.cols[k])}</th>`).join('')}</tr><tr class="fl np">${ks.map(k=>`<th><input placeholder="فلتر" value="${esc(o.flt[k]||'')}" oninput="RF('${id}','${k}',this.value)"></th>`).join('')}</tr></thead><tbody id="b-${id}">${b.body}</tbody><tfoot id="f-${id}">${b.foot}</tfoot></table></div>`}
-function REP(id,title,rows,cols,o={}){R[id]={rows,cols,hide:new Set(),flt:{},q:'',o,title};
+function rtab(id){const o=R[id],ks=Object.keys(o.cols).filter(k=>!o.hide.has(k)),b=rbody(id),wr=['note','details','t','n','pn','party','src','sl'];
+ return `<div class="sc"><table class="rt"><thead><tr>${ks.map(k=>`<th>${lab(o.cols[k])}</th>`).join('')}</tr>${o.fl?`<tr class="fl np">${ks.map(k=>`<th><input placeholder="فلتر…" value="${esc(o.flt[k]||'')}" oninput="RF('${id}','${k}',this.value)"></th>`).join('')}</tr>`:''}</thead><tbody id="b-${id}">${b.body}</tbody><tfoot id="f-${id}">${b.foot}</tfoot></table></div>`}
+function REP(id,title,rows,cols,o={}){R[id]={rows,cols,hide:new Set(),flt:{},q:'',o,title,fl:false};
  return `<div id="r-${id}" class="rep"><div class="dh"><b>${esc(ST.company||'')}</b><br><small>${esc(ST.phone||'')} ${esc(ST.address||'')}</small></div>
- <div class="rh"><h4>${title}</h4><div class="tools np"><input class="q" placeholder="بحث في كل الحقول…" oninput="RQ('${id}',this.value)">
- <details class="cols"><summary>الأعمدة</summary><div>${Object.entries(cols).map(([k,c])=>`<label class="ck"><input type="checkbox" checked onchange="tg('${id}','${k}',this.checked)">${lab(c)}</label>`).join('')}</div></details>
+ <div class="rh"><div><h4>${title}</h4><small id="c-${id}">${rows.length} سجل</small></div><div class="tools np"><input class="q" placeholder="بحث في كل الحقول…" oninput="RQ('${id}',this.value)">
+ <button class="g" onclick="FL('${id}')">فلاتر الأعمدة</button><details class="cols"><summary>الأعمدة</summary><div>${Object.entries(cols).map(([k,c])=>`<label class="ck"><input type="checkbox" checked onchange="tg('${id}','${k}',this.checked)">${lab(c)}</label>`).join('')}</div></details>
  <button class="g" onclick="xl('${id}')">Excel</button><button onclick="PRT($('#r-${id}'))">PDF / طباعة</button></div></div>${o.sub||''}<div id="t-${id}">${rtab(id)}</div></div>`}
-const RF=(id,k,val)=>{R[id].flt[k]=val;const b=rbody(id);$('#b-'+id).innerHTML=b.body;$('#f-'+id).innerHTML=b.foot};
-const RQ=(id,val)=>{R[id].q=val.toLowerCase();const b=rbody(id);$('#b-'+id).innerHTML=b.body;$('#f-'+id).innerHTML=b.foot};
+const FL=id=>{R[id].fl=!R[id].fl;$('#t-'+id).innerHTML=rtab(id)};
+const RF=(id,k,val)=>{R[id].flt[k]=val;const b=rbody(id);$('#b-'+id).innerHTML=b.body;$('#f-'+id).innerHTML=b.foot;$('#c-'+id).textContent=rrows(id).length+' سجل'};
+const RQ=(id,val)=>{R[id].q=val.toLowerCase();const b=rbody(id);$('#b-'+id).innerHTML=b.body;$('#f-'+id).innerHTML=b.foot;$('#c-'+id).textContent=rrows(id).length+' سجل'};
 const tg=(id,k,on)=>{on?R[id].hide.delete(k):R[id].hide.add(k);$('#t-'+id).innerHTML=rtab(id)};
 const xl=id=>{const o=R[id],ks=Object.keys(o.cols).filter(k=>!o.hide.has(k));
  const data=rrows(id).map(r=>Object.fromEntries(ks.map(k=>[txt(lab(o.cols[k])),Array.isArray(o.cols[k])?txt(o.cols[k][1](r)):r[k]])));
@@ -105,9 +108,12 @@ const ENP=(name,kind='external')=>ENS('payees',name,{kind});
 
 // ---- الدفع: خزينة / تحويل خارجي / مساهمة مالية من الشركاء
 const PML={cash:'من الخزينة',ext:'تحويل خارجي',contrib:'مساهمة مالية من الشركاء',inst:'أقساط / تاريخ استحقاق'},PMR={cash:'إلى الخزينة',ext:'تحويل وارد'};
-const PM=(p,modes=['cash','ext','contrib'],l='طريقة الدفع',rec)=>`<label>${l}<select id="${p}m" onchange="pmx('${p}')">${modes.map(m=>`<option value="${m}">${(rec?PMR:PML)[m]}</option>`).join('')}</select></label><div id="${p}x" class="fg full"></div>`;
-function pmx(p){const e=$('#'+p+'m');if(!e)return;const m=e.value;$('#'+p+'x').innerHTML=m=='inst'?F(p+'n','عدد الأقساط (1 = دفعة واحدة)','number','value=1 min=1')+F(p+'u','تاريخ أول استحقاق','date')+F(p+'g','الفاصل بين الأقساط (يوم)','number','value=30'):m=='ext'?F(p+'r','كود التحويل / نوع تطبيق التحويل'):m=='contrib'?`<div class="hint full">حدد مبلغ مساهمة كل شريك — يجب أن يساوي المجموع إجمالي المبلغ، وتُسجَّل كإيداع في حساب كل شريك ثم كمصروف واحد.</div>`+(PT.map(x=>F(p+'s'+x.id,'مساهمة '+esc(x.name),'number','min=0 step=any value=0')).join('')||'<div class="hint">لا يوجد شركاء</div>'):''}
-const PMV=p=>{const via=v('#'+p+'m'),ref=$('#'+p+'r')?v('#'+p+'r'):null;if(via=='ext'&&!ref)throw Error('اكتب كود التحويل أو نوع التطبيق');if(via=='inst'&&!v('#'+p+'u'))throw Error('حدد تاريخ الاستحقاق');return{via,ref,inst:$('#'+p+'n')?{n:Math.max(1,n('#'+p+'n')),u:v('#'+p+'u'),g:n('#'+p+'g')||30}:null,shares:PT.map(x=>({id:x.id,amount:n('#'+p+'s'+x.id)}))}};
+const PM=(p,modes=['cash','ext','contrib'],l='طريقة الدفع',rec)=>`<label>${l}<select id="${p}_m" onchange="pmx('${p}')">${modes.map(m=>`<option value="${m}">${(rec?PMR:PML)[m]}</option>`).join('')}</select></label><div id="${p}_x" class="fg full"></div>`;
+function pmx(p){const e=$('#'+p+'_m'),bx=$('#'+p+'_x');if(!e||!bx)return;const m=e.value;
+ bx.innerHTML=m=='inst'?F(p+'_n','عدد الأقساط (1 = دفعة واحدة)','number','value=1 min=1')+F(p+'_u','تاريخ أول استحقاق','date')+F(p+'_g','الفاصل بين الأقساط (يوم)','number','value=30'):m=='ext'?F(p+'_r','كود التحويل / نوع تطبيق التحويل'):
+ m=='contrib'?`<div class="hint full">حدد مبلغ مساهمة كل شريك — يجب أن يساوي المجموع إجمالي المبلغ، وتُسجَّل كإيداع في حساب كل شريك ثم كمصروف واحد.</div>`+(PT.map(x=>F(p+'_s'+x.id,'مساهمة '+esc(x.name),'number','min=0 step=any value=0')).join('')||'<div class="hint">لا يوجد شركاء</div>'):''}
+const PMV=p=>{const g=id=>$('#'+p+'_'+id),via=g('m').value,ref=g('r')?g('r').value.trim():null;if(via=='ext'&&!ref)throw Error('اكتب كود التحويل أو نوع التطبيق');if(via=='inst'&&!(g('u')&&g('u').value))throw Error('حدد تاريخ الاستحقاق');
+ return{via,ref,inst:g('n')?{n:Math.max(1,+g('n').value||1),u:g('u').value,g:+g('g').value||30}:null,shares:PT.map(x=>({id:x.id,amount:g('s'+x.id)?+g('s'+x.id).value||0:0}))}};
 async function PAY(dir,via,amount,m={},shares=[]){amount=+(+amount).toFixed(2);if(!(amount>0))throw Error('المبلغ غير صحيح');
  if(via=='contrib'){const sh=shares.filter(s=>s.amount>0);if(!sh.length||Math.abs(sum(sh,s=>s.amount)-amount)>0.01)throw Error('مجموع مساهمات الشركاء يجب أن يساوي المبلغ ('+fm(amount)+')');
   for(const s of sh){const t=(await post('treasury_tx',{kind:'in',amount:s.amount,source:'partner',partner_id:s.id,note:'مساهمة لسداد: '+(m.note||'')}))[0];
