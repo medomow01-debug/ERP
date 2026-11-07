@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>المشتريات</title><link rel=stylesheet href=style.css><script src=https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js></script><script src=app.js></script></head><body><div id=nav></div><main id=app></main><script>
+<!DOCTYPE html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>المشتريات</title><link rel=stylesheet href=style.css?v=6><script src=https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js></script><script src=app.js?v=6></script></head><body><div id=nav></div><main id=app></main><script>
 let D={},L=[];
 async function load(){const [s,i,w,c,pi,ins,pr,tx,tr]=await Promise.all([api('suppliers?order=id'),all('items?active=eq.true&order=id'),api('warehouses?active=eq.true&order=id'),api('categories?active=eq.true&order=id'),
  all('purchase_invoices?select=*,suppliers(name,code)&order=id.desc'),api('installments?select=*,purchase_invoices(id,supplier_id,suppliers(name))&order=due_date'),all('purchase_returns?order=id'),

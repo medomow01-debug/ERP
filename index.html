@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>الرئيسية</title><link rel=stylesheet href=style.css><script src=https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js></script><script src=app.js></script></head><body><div id=nav></div><main id=app></main><script>
+<!DOCTYPE html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>الرئيسية</title><link rel=stylesheet href=style.css?v=6><script src=https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js></script><script src=app.js?v=6></script></head><body><div id=nav></div><main id=app></main><script>
 let D={};
 async function load(){const d30=new Date(Date.now()-30*864e5).toISOString();
  const [t,tr,b,ins,sl,rc,pf,wh,sup]=await Promise.all([all('treasury_tx?select=kind,amount&order=id'),all('transfers?select=dir,amount&order=id'),all('stock_balance'),api('installments?paid=eq.false&select=amount,due_date'),
