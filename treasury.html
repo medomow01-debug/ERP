@@ -8,18 +8,25 @@ function ptx(){const t=v('#pt');$('#bp').hidden=t!='p';$('#ba2').hidden=t!='a'}
 async function payout(){const ty=v('#pt'),a=n('#pa');if(a<=0)throw Error('المبلغ غير صحيح');if(!v('#pn'))throw Error('اكتب بيان الدفع (مطلوب)');const pv=PMV('x');
  if(ty=='p'&&pv.via=='contrib')throw Error('الدفع لشريك يكون من الخزينة أو بتحويل');
  if(pv.via=='cash'&&a>await treasuryBal()&&!confirm('المبلغ أكبر من رصيد الخزينة الحالي. هل تريد المتابعة؟'))return false;
- const m={source:ty=='g'?'general':ty=='a'?'admin_pay':'partner_pay',note:v('#pn'),ref:pv.ref};
+ const m={source:ty=='g'?'general':ty=='a'?'admin_pay':'partner_pay',note:v('#pn'),ref:pv.ref,date:pv.date,method:pv.method};
  if(ty=='a'){if(!v('#pe'))throw Error('حدد المستلم أو اكتب اسمه');const p=await ENP(v('#pe'),v('#pk2'));m.payee=p.name;m.payee_id=p.id}
  const pid=n('#pp');if(ty=='p'){if(!pid)throw Error('اختر الشريك');m.partner_id=pid}
  const t=await PAY('out',pv.via,a,m,pv.shares);
  if(ty=='p'){await post('partner_ledger',{partner_id:pid,kind:v('#pk'),amount:a,period_id:CUR.id,note:m.note,...(pv.via=='ext'?{tr_id:t.id}:{tx_id:t.id})});
   await post('vouchers',{kind:v('#pk')=='payout'?'صرف أرباح':'صرف رأس مال',partner_id:pid,amount:a,details:m.note})}}
-async function income(){const a=n('#ia');if(a<=0)throw Error('المبلغ غير صحيح');if(!v('#in2'))throw Error('اكتب بيان الإيراد (مطلوب)');const pv=PMV('i');await PAY('in',pv.via,a,{source:'other_income',note:v('#in2'),ref:pv.ref})}
+async function income(){const a=n('#ia');if(a<=0)throw Error('المبلغ غير صحيح');if(!v('#in2'))throw Error('اكتب بيان الإيراد (مطلوب)');const pv=PMV('i');await PAY('in',pv.via,a,{source:'other_income',note:v('#in2'),ref:pv.ref,date:pv.date,method:pv.method})}
 const addPayee=()=>{if(!v('#yn'))throw Error('الاسم مطلوب');return post('payees',{name:v('#yn'),phone:v('#yp'),kind:v('#yk')})};
+function editTx(tb,id){const x=(tb=='treasury_tx'?D.t:D.tr).find(r=>r.id==id),tr=tb=='transfers';
+ MODAL(`<h2>تعديل ${tr?'تحويل':'حركة خزينة'} رقم ${id}</h2>${FG(F('ed','تاريخ العملية','date','value="'+x.date+'"')+(tr?`<label>طريقة التحويل<select id="et" onchange="$('#etw').hidden=this.value!='__new'">${TM.map(m=>`<option value="${esc(m)}" ${m==x.method?'selected':''}>${esc(m)}</option>`).join('')}<option value="__new">+ إضافة نوع جديد…</option></select></label><div id="etw" hidden>${F('etn','اسم النوع الجديد')}</div>`+F('er','كود التحويل / رقم العملية','text','value="'+esc(x.ref||'')+'"'):'')+F('en2','البيان','text','value="'+esc(x.note||'')+'"'))}
+ ${ACT(`<button onclick="go(()=>saveTx('${tb}',${id}))">حفظ التعديل</button><button class="g" onclick="closeModal()">إلغاء</button>`)}`)}
+async function saveTx(tb,id){const x=(tb=='treasury_tx'?D.t:D.tr).find(r=>r.id==id),d=v('#ed');if(!d)throw Error('حدد التاريخ');const body={note:v('#en2')||null};
+ if(d!=x.date){body.date=d;body.created_at=NEWTS(x.created_at,d)}
+ if(tb=='transfers'){let m=v('#et');if(m=='__new'){m=v('#etn');if(!m)throw Error('اكتب اسم النوع الجديد');if(!TM.includes(m)){await post('tmethods',{name:m});TM.push(m)}}body.method=m;body.ref=v('#er')||null}
+ await patch(tb,'id=eq.'+id,body);if(body.created_at)await patch('partner_ledger',(tb=='transfers'?'tr_id':'tx_id')+'=eq.'+id,{date:d,created_at:body.created_at});closeModal()}
 const delTx=(tb,id)=>{if(!confirm('حذف هذه المعاملة نهائياً؟ سيتأثر رصيد الخزينة/التحويلات تلقائياً.'))return false;return del(tb,'id=eq.'+id)};
 function showRep(){const t=v('#rt'),fr=FR(),k=v('#rk'),s=v('#rsrc'),pid=n('#rpt');
- let rows=D.t.map(x=>({tb:'treasury_tx',id:x.id,ts:x.created_at,date:x.date,w:'خزينة',dir:x.kind,src:x.source,party:x.partners?.name||x.payee||'',pid:x.partner_id,amount:x.amount,note:x.note,ref:x.ref}))
-  .concat(D.tr.map(x=>({tb:'transfers',id:x.id,ts:x.created_at,date:x.date,w:'تحويل',dir:x.dir,src:x.source,party:x.payee||'',pid:null,amount:x.amount,note:x.note,ref:x.ref})));
+ let rows=D.t.map(x=>({tb:'treasury_tx',id:x.id,ts:x.created_at,date:x.date,w:'خزينة',dir:x.kind,src:x.source,party:x.partners?.name||x.payee||'',pid:x.partner_id,amount:x.amount,note:x.note,ref:x.ref,method:''}))
+  .concat(D.tr.map(x=>({tb:'transfers',id:x.id,ts:x.created_at,date:x.date,w:'تحويل',dir:x.dir,src:x.source,party:x.payee||'',pid:null,amount:x.amount,note:x.note,ref:x.ref,method:x.method||'—'})));
  rows=rows.filter(x=>inR({created_at:x.ts},fr)&&(!k||x.dir==k)&&(!s||x.src==s)&&(!pid||x.pid==pid)).sort((a,b)=>new Date(b.ts)-new Date(a.ts));
  if(t=='tx')rows=rows.filter(x=>x.w=='خزينة');if(t=='tf')rows=rows.filter(x=>x.w=='تحويل');if(t=='dep')rows=rows.filter(x=>x.src=='partner'&&x.dir=='in');if(t=='exp')rows=rows.filter(x=>x.dir=='out'&&!['purchase','partner_pay','profit_pay','capital_pay','partner_exit','sale_return'].includes(x.src));
  const inn=sum(rows.filter(x=>x.dir=='in'),x=>x.amount),outt=sum(rows.filter(x=>x.dir=='out'),x=>x.amount),dep=sum(rows.filter(x=>x.src=='partner'&&x.dir=='in'),x=>x.amount);
@@ -28,7 +35,7 @@ function showRep(){const t=v('#rt'),fr=FR(),k=v('#rk'),s=v('#rsrc'),pid=n('#rpt'
  if(t=='sum'){const g={};rows.forEach(x=>{const key=x.src+x.w+x.dir,r=g[key]??={src:SRC[x.src]||x.src,w:x.w,dir:x.dir=='in'?'وارد':'صادر',n:0,amount:0};r.n++;r.amount+=x.amount});
   cols={src:'البند',w:'المصدر',dir:'النوع',n:'عدد الحركات',amount:'الإجمالي'};o={num:['n','amount'],tot:['n','amount'],sub};$('#rp').innerHTML=REP('t',T,Object.values(g),cols,o);return}
  rows=rows.map(x=>({...x,dl:x.dir=='in'?BD('وارد','ok'):BD('صادر','bad'),sl:SRC[x.src]||x.src}));
- cols={id:'#',date:'التاريخ',w:'المصدر',dl:'النوع',sl:'البند',party:'الجهة / الشريك / المستلم',amount:'المبلغ',note:'البيان',ref:'كود التحويل',a:['',x=>ISADM()?`<button class="d s" onclick="go(()=>delTx('${x.tb}',${x.id}))">حذف</button>`:'']};
+ cols={id:'#',date:'التاريخ',w:'المصدر',dl:'النوع',sl:'البند',party:'الجهة / الشريك / المستلم',amount:'المبلغ',note:'البيان',method:'طريقة التحويل',ref:'كود التحويل',a:['',x=>ISADM()?`<button class="g s" onclick="editTx('${x.tb}',${x.id})">تعديل</button> <button class="d s" onclick="go(()=>delTx('${x.tb}',${x.id}))">حذف</button>`:'']};
  o={num:['amount'],tot:['amount'],sub};$('#rp').innerHTML=REP('t',T,rows,cols,o)}
 function render(){const h=location.hash.split(':')[1];
  $('#app').innerHTML=`<datalist id="pl">${D.py.map(x=>`<option value="${esc(x.name)}">${esc(x.code)} — ${KD[x.kind]||''}</option>`).join('')}</datalist><div class="cards"><div>رصيد الخزينة<b>${fm(bal())}</b></div><div>رصيد التحويلات<b>${fm(tbal())}</b></div><div>إجمالي المتاح<b>${fm(bal()+tbal())}</b></div></div>`+

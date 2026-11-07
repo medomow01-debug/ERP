@@ -14,10 +14,10 @@ function drawL(){const f=1-disc()/100,t=tot();$('#lt').innerHTML=(L.length?TB(L.
 async function saveSale(){if(!L.length)throw Error('أضف أصنافاً');const cn=v('#cn');if(!cn)throw Error('اسم العميل مطلوب');const pv=PMV('s');
  for(const l of L)if(avail(l.it)<l.q)throw Error('الرصيد غير كاف: '+l.it.name);
  const c=await ENS('customers',cn,{phone:v('#cph')||null}),d=disc(),f=1-d/100,total=+(tot()*f).toFixed(2);
- const inv=(await post('sales_invoices',{customer_id:c.id,discount_pct:d,total,mode:pv.via,note:v('#sn2')||null}))[0];
+ const inv=(await post('sales_invoices',{customer_id:c.id,discount_pct:d,...DTX(pv.date),total,mode:pv.via,note:v('#sn2')||null}))[0];
  for(const l of L){const {cost}=await take(l.it.id,l.q);await post('sales_lines',{inv_id:inv.id,item_id:l.it.id,qty:l.q,price:+(l.p*f).toFixed(4),cost});
   let left=l.q;for(const b of D.bal.filter(x=>x.item_id==l.it.id&&x.qty>0).sort((a,b)=>b.qty-a.qty)){const t=Math.min(left,b.qty);if(t<=0)break;await post('stock_moves',mv(l.it.id,b.wh_id,-t,'sale',inv.id,'فاتورة بيع '+inv.id));left-=t}}
- await PAY('in',pv.via,total,{source:'sale',party:'C:'+c.id,inv_id:inv.id,note:'فاتورة بيع '+inv.id+(v('#sn2')?' — '+v('#sn2'):''),ref:pv.ref},[]);L=[];printInv(inv.id)}
+ await PAY('in',pv.via,total,{source:'sale',party:'C:'+c.id,inv_id:inv.id,note:'فاتورة بيع '+inv.id+(v('#sn2')?' — '+v('#sn2'):''),ref:pv.ref,date:pv.date,method:pv.method},[]);L=[];printInv(inv.id)}
 async function printInv(id){const [i]=await api('sales_invoices?select=*,customers(name,phone),sales_lines(qty,price,items(name))&id=eq.'+id);
  PRINTDOC('فاتورة بيع رقم '+id,`العميل: ${esc(i.customers.name)} ${esc(i.customers.phone||'')} — التاريخ: ${i.date}${i.discount_pct>0?' — خصم '+i.discount_pct+'%':''}`,i.sales_lines.map(l=>({name:l.items.name,qty:l.qty,price:fm(l.price),tot:fm(l.qty*l.price)})),i.total)}
 // ---- المرتجع
@@ -31,20 +31,23 @@ async function doSR(){const inv=D.ri,iv=D.inv.find(x=>x.id==inv),pv=PMV('r'),ite
  const ret=(await post('sales_returns',{inv_id:inv,total:+t.toFixed(2)}))[0];
  for(const [l,q] of items){await post('sales_return_lines',{ret_id:ret.id,line_id:l.id,item_id:l.item_id,qty:q,price:l.price,cost:l.cost});await patch('sales_lines','id=eq.'+l.id,{returned:l.returned+q});
   await post('stock_moves',mv(l.item_id,l.items.wh_id,q,'sale_return',inv,'مرتجع فاتورة بيع '+inv));await addBatch(l.item_id,q,l.cost,l.price,l.items.wh_id)}
- await PAY('out',pv.via,t,{source:'sale_return',party:'C:'+iv.customer_id,inv_id:inv,note:'مرتجع فاتورة بيع '+inv,ref:pv.ref},[]);$('#rl').innerHTML=''}
+ await PAY('out',pv.via,t,{source:'sale_return',party:'C:'+iv.customer_id,inv_id:inv,note:'مرتجع فاتورة بيع '+inv,ref:pv.ref,date:pv.date,method:pv.method},[]);$('#rl').innerHTML=''}
 // ---- الكونتينر المباشر
 async function autoWh(){let w=(await api('warehouses?active=eq.true&name=eq.'+encodeURIComponent('كونتينر بيع مباشر')))[0];
  if(!w){const used=D.wh.map(x=>x.code),c=[...'ZYXWVUTSRQPONMLKJIHGFEDCBA'].find(x=>!used.includes(x));w=(await post('warehouses',{code:c,name:'كونتينر بيع مباشر'}))[0]}
  let k=(await api('categories?active=eq.true&wh_id=eq.'+w.id+'&limit=1'))[0];if(!k)k=(await post('categories',{wh_id:w.id,code:'K',name:'حاويات'}))[0];return[w,k]}
 async function saveCont(){const ty=v('#kt'),b=n('#kb'),s=n('#kp');if(!ty||!v('#kseller')||!v('#kbuyer')||s<=0)throw Error('أكمل البيانات: النوع وسعر البيع والبائع والمشتري');const pc=PMV('kc'),pr=PMV('kv');
  const [w,k]=await autoWh(),sel=await ENS('customers',v('#kseller'),{phone:v('#ksp')||null}),buy=await ENS('customers',v('#kbuyer'),{phone:v('#kbp')||null});
- const inv=(await post('sales_invoices',{customer_id:buy.id,total:s,mode:pr.via,kind:'container',note:v('#kn')||null}))[0];
+ const inv=(await post('sales_invoices',{customer_id:buy.id,...DTX(pr.date),total:s,mode:pr.via,kind:'container',note:v('#kn')||null}))[0];
  const it=(await post('items',{name:ty+' #'+inv.id,wh_id:w.id,cat_id:k.id,buy:b,sell:s,min_qty:0}))[0];
  await post('stock_moves',mv(it.id,w.id,1,'container_in',inv.id,'شراء من '+sel.name));await post('stock_moves',mv(it.id,w.id,-1,'container_out',inv.id,'بيع إلى '+buy.name));
  await post('sales_lines',{inv_id:inv.id,item_id:it.id,qty:1,price:s,cost:b});await post('sales_containers',{inv_id:inv.id,ctype:ty,buy:b,sell:s,seller_id:sel.id,buyer_id:buy.id});
- if(pc.via!='none'&&b>0)await PAY('out',pc.via,b,{source:'purchase',party:'C:'+sel.id,inv_id:inv.id,note:'شراء كونتينر (فاتورة '+inv.id+') من '+sel.name,ref:pc.ref},[]);
- await PAY('in',pr.via,s,{source:'sale',party:'C:'+buy.id,inv_id:inv.id,note:'بيع كونتينر (فاتورة '+inv.id+') إلى '+buy.name,ref:pr.ref},[]);printInv(inv.id)}
+ if(pc.via!='none'&&b>0)await PAY('out',pc.via,b,{source:'purchase',party:'C:'+sel.id,inv_id:inv.id,note:'شراء كونتينر (فاتورة '+inv.id+') من '+sel.name,ref:pc.ref,date:pc.date,method:pc.method},[]);
+ await PAY('in',pr.via,s,{source:'sale',party:'C:'+buy.id,inv_id:inv.id,note:'بيع كونتينر (فاتورة '+inv.id+') إلى '+buy.name,ref:pr.ref,date:pr.date,method:pr.method},[]);printInv(inv.id)}
 // ---- حذف فاتورة (للمدير) مع عكس الأثر
+function chSIDate(id){const inv=D.inv.find(x=>x.id==id);DATEDLG('تعديل تاريخ فاتورة البيع رقم '+id,inv.date,async d=>{const ts=NEWTS(inv.created_at,d);
+ await patch('sales_invoices','id=eq.'+id,{date:d,created_at:ts});await patch('stock_moves',`ref=eq.${id}&kind=in.(sale,sale_return,container_in,container_out)`,{created_at:ts});
+ for(const tb of ['treasury_tx','transfers'])await patch(tb,`inv_id=eq.${id}&source=in.(sale,sale_return,purchase)`,{date:d,created_at:ts})})}
 async function delSI(id){if(!confirm('حذف الفاتورة رقم '+id+' نهائياً؟ سيُخصم الإيراد من الخزينة/التحويلات وتعود الكميات للمخزون.'))return false;
  const ls=await api('sales_lines?select=*,items(sell)&inv_id=eq.'+id);for(const l of ls){const q=l.qty-l.returned;if(q>0)await addBatch(l.item_id,q,l.cost,l.items.sell,null)}
  await del('treasury_tx',`inv_id=eq.${id}&source=in.(sale,sale_return)`);await del('transfers',`inv_id=eq.${id}&source=in.(sale,sale_return)`);await del('stock_moves',`ref=eq.${id}&kind=in.(sale,sale_return)`);
@@ -53,7 +56,7 @@ async function delSI(id){if(!confirm('حذف الفاتورة رقم '+id+' نه
 // ---- التقارير
 async function showRep(){const t=v('#rt'),cid=n('#rc'),fr=FR();let rows,cols,title,o={};
  if(t=='inv'){title='فواتير البيع';rows=D.inv.filter(x=>inR(x,fr)&&(!cid||x.customer_id==cid)).map(x=>({...x,cn:x.customers.name,kd:x.kind=='container'?'كونتينر':'عادية',md:x.mode=='ext'?'تحويل':'خزينة',rt:rets(x.id),nt:x.total-rets(x.id)}));
-  cols={id:'رقم',date:'التاريخ',cn:'العميل',kd:'النوع',note:'البيان',discount_pct:'خصم %',total:'الإجمالي',rt:'المرتجع',nt:'الصافي',md:'التحصيل',a:['',x=>`<button class="g s" onclick="printInv(${x.id})">طباعة</button>`+(ISADM()?` <button class="d s" onclick="go(()=>delSI(${x.id}))">حذف</button>`:'')]};o={num:['discount_pct','total','rt','nt'],tot:['total','rt','nt']}}
+  cols={id:'رقم',date:'التاريخ',cn:'العميل',kd:'النوع',note:'البيان',discount_pct:'خصم %',total:'الإجمالي',rt:'المرتجع',nt:'الصافي',md:'التحصيل',a:['',x=>`<button class="g s" onclick="printInv(${x.id})">طباعة</button>`+(ISADM()?` <button class="g s" onclick="chSIDate(${x.id})">تعديل التاريخ</button> <button class="d s" onclick="go(()=>delSI(${x.id}))">حذف</button>`:'')]};o={num:['discount_pct','total','rt','nt'],tot:['total','rt','nt']}}
  if(t=='itm'){title='المبيعات حسب الصنف';const [a,b]=fr,l=await all('sales_lines?select=qty,price,cost,items(code,name),sales_invoices!inner(created_at,customer_id)&order=id&sales_invoices.created_at=gte.'+encodeURIComponent(a.toISOString())+'&sales_invoices.created_at=lte.'+encodeURIComponent(b.toISOString())),g={};
   l.filter(x=>!cid||x.sales_invoices.customer_id==cid).forEach(x=>{const r=g[x.items.code]??={cd:x.items.code,nm:x.items.name,q:0,rev:0,cost:0};r.q+=x.qty;r.rev+=x.qty*x.price;r.cost+=x.qty*x.cost});
   rows=Object.values(g).map(r=>({...r,pf:r.rev-r.cost}));cols={cd:'الكود',nm:'الصنف',q:'الكمية المباعة',rev:'الإيراد',cost:'التكلفة',pf:'الربح'};o={num:['q','rev','cost','pf'],tot:['q','rev','cost','pf']}}

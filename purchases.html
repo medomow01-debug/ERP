@@ -22,17 +22,21 @@ function drawL(){$('#lt').innerHTML=(L.length?TB(L.map((l,i)=>({...l,t:l.q*l.b,i
  `<label class="ck" style="margin:12px 0"><input type="checkbox" id="ba"${window.BA?' checked':''} onchange="window.BA=this.checked"> تطبيق الأسعار الجديدة على كمية المخزن بالكامل (وإلا تُطبَّق عند بدء الصرف من هذه الكمية)</label><div class="sumbar np"><div><small>إجمالي الفاتورة</small><b>${fm(tot())}</b></div><button onclick="go(saveBuy)">حفظ الفاتورة</button></div>`}
 async function saveBuy(){if(!L.length)throw Error('أضف أصنافاً للفاتورة');const name=v('#bs');if(!name)throw Error('حدد المورد');if(!v('#bn'))throw Error('اكتب بيان الفاتورة');const pv=PMV('b'),total=tot();
  const s=await ENS('suppliers',name,{phone:v('#sph')||null,trade:v('#str')||null});
- const inv=(await post('purchase_invoices',{supplier_id:s.id,date:v('#bd')||td(),total,mode:pv.via,pay_ref:pv.ref,note:v('#bn')}))[0];
+ const inv=(await post('purchase_invoices',{supplier_id:s.id,date:v('#bd')||td(),...DTX(v('#bd')),total,mode:pv.via,pay_ref:pv.ref,note:v('#bn')}))[0];
  for(const l of L){let it=D.items.find(x=>x.name==l.name&&x.wh_id==l.w&&x.cat_id==l.c)||(await post('items',{name:l.name,wh_id:l.w,cat_id:l.c,buy:l.b,sell:l.s}))[0];
   const old=await api('purchase_lines?select=id&remaining=gt.0&item_id=eq.'+it.id);
   if($('#ba').checked||!old.length){await patch('items','id=eq.'+it.id,{buy:l.b,sell:l.s});if(old.length)await patch('purchase_lines','remaining=gt.0&item_id=eq.'+it.id,{buy:l.b,sell:l.s})}
   await post('purchase_lines',{inv_id:inv.id,item_id:it.id,wh_id:l.w,qty:l.q,buy:l.b,sell:l.s,remaining:l.q});await post('stock_moves',mv(it.id,l.w,l.q,'purchase',inv.id,'فاتورة شراء '+inv.id))}
- const m={source:'purchase',party:'S:'+s.id,inv_id:inv.id,note:'فاتورة شراء '+inv.id+' — '+v('#bn'),ref:pv.ref};
+ const m={source:'purchase',party:'S:'+s.id,inv_id:inv.id,note:'فاتورة شراء '+inv.id+' — '+v('#bn'),ref:pv.ref,date:pv.date,method:pv.method};
  if(pv.via=='inst'){const a=+(total/pv.inst.n).toFixed(2),rows=[];for(let i=0;i<pv.inst.n;i++){const d=new Date(pv.inst.u);d.setDate(d.getDate()+pv.inst.g*i);rows.push({inv_id:inv.id,due_date:d.toISOString().slice(0,10),amount:i==pv.inst.n-1?+(total-a*(pv.inst.n-1)).toFixed(2):a})}await post('installments',rows)}
  else await PAY('out',pv.via,total,m,pv.shares);
  L=[];printPI(inv.id)}
-async function payIns(id,via){const i=D.ins.find(x=>x.id==id),ref=via=='ext'?prompt('كود التحويل / نوع التطبيق'):null;if(via=='ext'&&!ref)return false;
- await PAY('out',via,i.amount,{source:'purchase',party:'S:'+i.purchase_invoices.supplier_id,inv_id:i.inv_id,note:'قسط فاتورة شراء '+i.inv_id,ref},[]);await patch('installments','id=eq.'+id,{paid:true,paid_date:td()})}
+function payInsDlg(id){const i=D.ins.find(x=>x.id==id);MODAL(`<h2>دفع قسط فاتورة شراء ${i.inv_id}</h2><p>المبلغ: <b>${fm(i.amount)}</b> — المورد: ${esc(i.purchase_invoices.suppliers.name)}</p>${FG(PM('pi',['cash','ext']))}${ACT(`<button onclick="go(()=>payIns(${id}))">تأكيد الدفع</button><button class="g" onclick="closeModal()">إلغاء</button>`)}`);pmx('pi')}
+async function payIns(id){const i=D.ins.find(x=>x.id==id),pv=PMV('pi');closeModal();
+ await PAY('out',pv.via,i.amount,{source:'purchase',party:'S:'+i.purchase_invoices.supplier_id,inv_id:i.inv_id,note:'قسط فاتورة شراء '+i.inv_id,ref:pv.ref,date:pv.date,method:pv.method},[]);await patch('installments','id=eq.'+id,{paid:true,paid_date:pv.date})}
+function chPIDate(id){const inv=D.inv.find(x=>x.id==id);DATEDLG('تعديل تاريخ فاتورة الشراء رقم '+id,inv.date,async d=>{const ts=NEWTS(inv.created_at,d);
+ await patch('purchase_invoices','id=eq.'+id,{date:d,created_at:ts});await patch('stock_moves',`ref=eq.${id}&kind=in.(purchase,purchase_return)`,{created_at:ts});
+ for(const tb of ['treasury_tx','transfers'])await patch(tb,`inv_id=eq.${id}&source=in.(purchase,purchase_refund)`,{date:d,created_at:ts})})}
 async function postpone(id){const i=D.ins.find(x=>x.id==id),d=prompt('التاريخ الجديد (YYYY-MM-DD)',i.due_date);if(!d)return false;await patch('installments','id=eq.'+id,{due_date:d})}
 // ---- المرتجعات: بحث برقم الفاتورة أو المورد أو التاريخ
 function searchInv(){const q=v('#rq').toLowerCase(),f=v('#rf'),g=v('#rg2');
@@ -55,7 +59,7 @@ async function stmt(sid){const r=D.ret.filter(x=>D.inv.find(i=>i.id==x.inv_id)?.
   ...D.pay.filter(p=>ids.includes(p.inv_id)).map(p=>({ts:p.created_at,d:p.created_at.slice(0,10),t:(p.note||p.source)+' ('+p.w+(p.ref?' — '+p.ref:'')+')',a:p.k=='out'?-p.amount:p.amount,k:'pay'}))].sort((a,b)=>new Date(a.ts)-new Date(b.ts))}
 async function showRep(){const t=v('#rt'),sid=n('#rs'),fr=FR();let rows,cols,title,o={};
  if(t=='inv'){title='فواتير المشتريات';rows=D.inv.filter(x=>inR(x,fr)&&(!sid||x.supplier_id==sid)).map(x=>({...x,sn:x.suppliers.name,md:{cash:'خزينة',ext:'تحويل',inst:'أقساط',contrib:'مساهمة شركاء'}[x.mode]||x.mode,rt:rets(x.id),pd:paid(x.id),rm:rem(x),st:stat(x)}));
-  cols={id:'رقم',date:'التاريخ',sn:'المورد',note:'البيان',md:'طريقة الدفع',total:'الإجمالي',rt:'المرتجع',pd:'المدفوع',rm:'المتبقي',st:'الحالة',pay_ref:'كود التحويل',a:['',x=>`<button class="g s" onclick="printPI(${x.id})">طباعة</button>`+(ISADM()?` <button class="d s" onclick="go(()=>delPI(${x.id}))">حذف</button>`:'')]};o={num:['total','rt','pd','rm'],tot:['total','rt','pd','rm']}}
+  cols={id:'رقم',date:'التاريخ',sn:'المورد',note:'البيان',md:'طريقة الدفع',total:'الإجمالي',rt:'المرتجع',pd:'المدفوع',rm:'المتبقي',st:'الحالة',pay_ref:'كود التحويل',a:['',x=>`<button class="g s" onclick="printPI(${x.id})">طباعة</button>`+(ISADM()?` <button class="g s" onclick="chPIDate(${x.id})">تعديل التاريخ</button> <button class="d s" onclick="go(()=>delPI(${x.id}))">حذف</button>`:'')]};o={num:['total','rt','pd','rm'],tot:['total','rt','pd','rm']}}
  if(t=='stmt'){if(!sid)return toast('اختر المورد أولاً');const s=D.sup.find(x=>x.id==sid);title='كشف حساب مورد: '+s.name;rows=withOpening(await stmt(sid),fr[0]);
   const all_=await stmt(sid),bal=sum(all_,r=>r.a),inv=sum(all_.filter(r=>r.k=='inv'),r=>r.a),pd=-sum(all_.filter(r=>r.k=='pay'),r=>r.a),rt=-sum(all_.filter(r=>r.k=='ret'),r=>r.a);
   cols={d:'التاريخ',t:'البيان',dr:'مدين (فواتير)',cr:'دائن (مدفوع / مرتجع)',b:'الرصيد'};o={num:['dr','cr','b'],tot:['dr','cr'],
@@ -72,7 +76,7 @@ function render(){const due=D.ins.filter(x=>!x.paid).sort((a,b)=>a.due_date<b.du
  <div id="lt"></div>`,'new')+
  SEC('الموردون',`${FG(F('sn','اسم المورد')+F('sp','رقم الهاتف')+F('st','نوع التجارة')+ACT('<button onclick="go(addSup)">إضافة مورد</button>'))}${TB(D.sup,{code:'الكود',name:'الاسم',phone:'الهاتف',trade:'نوع التجارة'})}`,'sup')+
  SEC('الدفعات المستحقة (دفع أو ترحيل لتاريخ جديد)',due.length?TB(due,{inv_id:'فاتورة',sn:['المورد',x=>esc(x.purchase_invoices.suppliers.name)],due_date:['الاستحقاق',x=>x.due_date+(x.due_date<=td()?' '+BD('مستحق','bad'):'')],amount:['المبلغ',x=>fm(x.amount)],
-  a:['',x=>`<button class="s" onclick="go(()=>payIns(${x.id},'cash'))">دفع من الخزينة</button> <button class="g s" onclick="go(()=>payIns(${x.id},'ext'))">دفع بتحويل</button> <button class="g s" onclick="go(()=>postpone(${x.id}))">ترحيل</button>`]}):EMPTY('لا توجد دفعات مستحقة'),'due')+
+  a:['',x=>`<button class="s" onclick="payInsDlg(${x.id})">دفع</button> <button class="g s" onclick="go(()=>postpone(${x.id}))">ترحيل</button>`]}):EMPTY('لا توجد دفعات مستحقة'),'due')+
  SEC('مرتجع فاتورة شراء',`${FG(F('rq','رقم الفاتورة أو اسم/كود المورد')+F('rf','من تاريخ','date')+F('rg2','إلى تاريخ','date')+ACT('<button onclick="searchInv()">بحث</button>'))}<div id="rl"></div>`,'ret')+
  SEC('التقارير',`${HR('فلتر التقرير')}${FBAR(`<label>التقرير<select id="rt"><option value="inv">فواتير المشتريات</option><option value="stmt">كشف حساب مورد</option><option value="ins">الأقساط والدفعات</option><option value="ret">المرتجعات</option><option value="sup">الموردون وأرصدتهم</option></select></label>${SL('rs','المورد',[{id:0,name:'كل الموردين'},...D.sup])}`)}${HR('النتائج')}<div id="rp"></div>`,'rep');
  fillCats();pmx('b');drawL();supPick();lineTag();if(h&&$('#rt'))$('#rt').value=h;showRep()}

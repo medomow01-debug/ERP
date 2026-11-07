@@ -14,7 +14,7 @@ const LG=(p,kind,amount,note,per,ex={})=>post('partner_ledger',{partner_id:p,kin
 function calcRows(pf,parts,f){const adj=sum(D.aj.filter(a=>a.period_id==CUR.id&&!a.batch_id),a=>a.amount),net=pf.net-adj,sp=SPLIT(pf.recs,parts,cb),k=pf.net?net/pf.net:0;
  return{net,adj,rows:parts.map(p=>{const amt=+(sp[p.id]*k).toFixed(2);return{p,amt,pct:net?+(amt/net*100).toFixed(2):0,from:p.start_at&&new Date(p.start_at)>new Date(f)?p.start_at:f}})}}
 async function allocPaid(pid,x){const rows=(await api('profit_dist?partner_id=eq.'+pid+'&order=id')).filter(r=>r.amount-r.paid>0.004);for(const r of rows){if(x<=0.004)break;const t=Math.min(x,r.amount-r.paid);await patch('profit_dist','id=eq.'+r.id,{paid:+(r.paid+t).toFixed(2)});x-=t}}
-async function payOut(p,amt,kind,pv,note,from,to,vk){const t=await PAY('out',pv.via,amt,{source:kind=='payout'?'profit_pay':'capital_pay',partner_id:p.id,note,ref:pv.ref},[]);
+async function payOut(p,amt,kind,pv,note,from,to,vk){const t=await PAY('out',pv.via,amt,{source:kind=='payout'?'profit_pay':'capital_pay',partner_id:p.id,note,ref:pv.ref,date:pv.date,method:pv.method},[]);
  await LG(p.id,kind,amt,note,undefined,pv.via=='ext'?{tr_id:t.id}:{tx_id:t.id});await post('vouchers',{kind:vk,partner_id:p.id,amount:+(+amt).toFixed(2),from_at:from??null,to_at:to??null,details:note});if(kind=='payout')await allocPaid(p.id,amt)}
 async function mkBatch(f,t,parts){const pf=await PROFIT(f,t),c=calcRows(pf,parts,f),res={};
  const b=(await post('dist_batches',{period_id:CUR.id,from_at:f,to_at:t,net:c.net}))[0];
@@ -26,7 +26,7 @@ function openStmt(id){$('#rt').value='led';$('#rp1').value=id;document.querySele
 async function addP(){if(!v('#pn'))throw Error('اسم الشريك مطلوب');if(v('#psm')=='d'&&!v('#psd'))throw Error('حدد تاريخ بدء النشاط');
  await post('partners',{name:v('#pn'),phone:v('#pph')||null,start_at:v('#psm')=='d'?v('#psd')+'T00:00:00':null})}
 async function deposit(){const p=n('#dp'),a=n('#da');if(!p||a<=0)throw Error('اختر الشريك وأدخل المبلغ');const pv=PMV('d'),pr=D.p.find(x=>x.id==p);
- const t=await PAY('in',pv.via,a,{source:'partner',partner_id:p,note:'إيداع شريك: '+pr.name+(v('#dn')?' — '+v('#dn'):''),ref:pv.ref});await LG(p,'deposit',a,'إيداع'+(v('#dn')?' — '+v('#dn'):''),undefined,pv.via=='ext'?{tr_id:t.id}:{tx_id:t.id})}
+ const t=await PAY('in',pv.via,a,{source:'partner',partner_id:p,note:'إيداع شريك: '+pr.name+(v('#dn')?' — '+v('#dn'):''),ref:pv.ref,date:pv.date,method:pv.method});await LG(p,'deposit',a,'إيداع'+(v('#dn')?' — '+v('#dn'):''),undefined,pv.via=='ext'?{tr_id:t.id}:{tx_id:t.id})}
 function editP(id){const p=D.p.find(x=>x.id==id);MODAL(`<h2>تعديل الشريك: ${esc(p.name)}</h2>${FG(F('en','الاسم','text','value="'+esc(p.name)+'"')+F('ep','الهاتف','text','value="'+esc(p.phone||'')+'"')+F('es','تاريخ بدء النشاط (فارغ = من البداية)','date','value="'+dt(p.start_at).replace('—','')+'"')+F('ew','نسبة / وزن احتساب الربح (فارغ = حسب رأس المال)','number','step=any value="'+(p.pct??'')+'"'))}
  ${ACT(`<button onclick="closeModal();go(()=>patch('partners','id=eq.${id}',{name:v('#en'),phone:v('#ep')||null,start_at:v('#es')?v('#es')+'T00:00:00':null,pct:v('#ew')===''?null:n('#ew')}))">حفظ</button><button class="g" onclick="closeModal()">إلغاء</button>`)}`)}
 function payBal(id){const p=D.p.find(x=>x.id==id),b=pb(id);if(b<=0.004)return toast('لا يوجد رصيد أرباح لهذا الشريك');
@@ -71,7 +71,7 @@ async function dissolve(){const ids=[...document.querySelectorAll('.dp:checked')
  for(const id of ids){const p=D.p.find(x=>x.id==id),c0=cb(id),bal=+(pb(id)+(res[id]||0)).toFixed(2),pay=mode=='cap'?0:mode=='full'?bal:+(bal*pcx/100).toFixed(2),forf=+(bal-pay).toFixed(2);
   if(forf>0.004)await LG(id,'payout',forf,mode=='cap'?'تنازل عن الأرباح عند فض الشراكة':'جزء من الأرباح لم يُصرف عند فض الشراكة');
   const total=+(c0+pay).toFixed(2),det=`فض شراكة ${p.name}: رأس المال ${fm(c0)} + أرباح ${fm(pay)} (${{cap:'المبلغ المساهم به فقط',full:'المبلغ + كامل هامش الربح',part:'المبلغ + '+pcx+'% من هامش الربح'}[mode]})`;
-  if(total>0.004){const t=await PAY('out',pv.via,total,{source:'partner_exit',partner_id:id,note:det,ref:pv.ref},[]);const ex=pv.via=='ext'?{tr_id:t.id}:{tx_id:t.id};
+  if(total>0.004){const t=await PAY('out',pv.via,total,{source:'partner_exit',partner_id:id,note:det,ref:pv.ref,date:pv.date,method:pv.method},[]);const ex=pv.via=='ext'?{tr_id:t.id}:{tx_id:t.id};
    if(pay>0.004)await LG(id,'payout',pay,'صرف أرباح عند فض الشراكة',undefined,ex);if(c0>0.004)await LG(id,'capital_out',c0,'استرداد رأس المال عند فض الشراكة',undefined,pay>0.004?{}:ex);
    await post('vouchers',{kind:'فض شراكة',partner_id:id,amount:total,details:det});if(pay>0.004)await allocPaid(id,pay)}
   await patch('partners','id=eq.'+id,{active:false,left_at:now})}}

@@ -1,6 +1,6 @@
 // ===== المكتبة المشتركة لكل الصفحات =====
 const U='https://kmoqrhqtokxlfiynzpou.supabase.co',K='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imttb3FyaHF0b2t4bGZpeW56cG91Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4MDk5NTQsImV4cCI6MjEwOTM4NTk1NH0.o-xpXehAR8tRbgObb1OfM5giYxpLt2kXsO2LYzSZfh8';
-let S=JSON.parse(localStorage.erp||'null'),ST={},CUR=null,PT=[],PERS=[];
+let S=JSON.parse(localStorage.erp||'null'),ST={},CUR=null,PT=[],PERS=[],TM=['تحويل بنكي','انستا باي','محفظة بنكية'];
 const hd=()=>({apikey:K,Authorization:'Bearer '+K,'x-token':S?.token||'','Content-Type':'application/json',Prefer:'return=representation'});
 async function api(p,m='GET',b){const r=await fetch(U+'/rest/v1/'+p,{method:m,headers:hd(),body:b===undefined?undefined:JSON.stringify(b)});
  const j=await r.json().catch(()=>null);if(!r.ok)throw new Error(j?.message||r.status);return j}
@@ -26,7 +26,7 @@ async function boot(key){
  if(me.must_change){location='login.html?change=1';throw 0}
  S={...S,...me};
  if(!(S.role=='admin'||key=='index'||S.perms.includes(key))){document.body.innerHTML='<p style="padding:30px">ليس لديك صلاحية لهذه الصفحة</p>';throw 0}
- const [s,p,pt]=await Promise.all([api('settings?id=eq.1'),api('periods?order=id'),api('partners?active=eq.true&order=id')]);
+ const [s,p,pt,tm]=await Promise.all([api('settings?id=eq.1'),api('periods?order=id'),api('partners?active=eq.true&order=id'),api('tmethods?order=id').catch(()=>[])]);if(tm.length)TM=tm.map(x=>x.name);
  ST=s[0]||{};PERS=p;CUR=p.find(x=>x.status=='open');PT=pt;document.documentElement.style.setProperty('--c',ST.theme||'#0f766e');
  const cur=NAV.find(x=>x[0]==key),w=document.createElement('div');w.className='wrap';$('#app').before(w);
  w.innerHTML=`<div id="top"><div><h1>${cur[1]}</h1><small>${new Date().toLocaleDateString('ar-EG',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</small></div><div class="who">${esc(S.name)}</div></div>`;w.append($('#app'));
@@ -108,18 +108,28 @@ const ENP=(name,kind='external')=>ENS('payees',name,{kind});
 
 // ---- الدفع: خزينة / تحويل خارجي / مساهمة مالية من الشركاء
 const PML={cash:'من الخزينة',ext:'تحويل خارجي',contrib:'مساهمة مالية من الشركاء',inst:'أقساط / تاريخ استحقاق'},PMR={cash:'إلى الخزينة',ext:'تحويل وارد'};
-const PM=(p,modes=['cash','ext','contrib'],l='طريقة الدفع',rec)=>`<label>${l}<select id="${p}_m" onchange="pmx('${p}')">${modes.map(m=>`<option value="${m}">${(rec?PMR:PML)[m]}</option>`).join('')}</select></label><div id="${p}_x" class="fg full"></div>`;
-function pmx(p){const e=$('#'+p+'_m'),bx=$('#'+p+'_x');if(!e||!bx)return;const m=e.value;
- bx.innerHTML=m=='inst'?F(p+'_n','عدد الأقساط (1 = دفعة واحدة)','number','value=1 min=1')+F(p+'_u','تاريخ أول استحقاق','date')+F(p+'_g','الفاصل بين الأقساط (يوم)','number','value=30'):m=='ext'?F(p+'_r','كود التحويل / نوع تطبيق التحويل'):
+const TMOPTS=()=>TM.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')+'<option value="__new">+ إضافة نوع جديد…</option>';
+const PM=(p,modes=['cash','ext','contrib'],l='طريقة الدفع',rec)=>`<label>${l}<select id="${p}_m" onchange="pmx('${p}')">${modes.map(m=>`<option value="${m}">${(rec?PMR:PML)[m]}</option>`).join('')}</select></label><div id="${p}_dw"><label>تاريخ العملية<input type="date" id="${p}_d" value="${td()}"></label></div><div id="${p}_x" class="fg full"></div>`;
+const tmx=p=>{const w=$('#'+p+'_tw'),t=$('#'+p+'_t');if(w&&t)w.hidden=t.value!='__new'};
+function pmx(p){const e=$('#'+p+'_m'),bx=$('#'+p+'_x');if(!e||!bx)return;const m=e.value,dw=$('#'+p+'_dw');if(dw)dw.hidden=m=='inst';
+ bx.innerHTML=m=='inst'?F(p+'_n','عدد الأقساط (1 = دفعة واحدة)','number','value=1 min=1')+F(p+'_u','تاريخ أول استحقاق','date')+F(p+'_g','الفاصل بين الأقساط (يوم)','number','value=30'):
+ m=='ext'?`<label>طريقة التحويل<select id="${p}_t" onchange="tmx('${p}')">${TMOPTS()}</select></label><div id="${p}_tw" hidden>${F(p+'_tn','اسم نوع التحويل الجديد')}</div>`+F(p+'_r','كود التحويل / رقم العملية'):
  m=='contrib'?`<div class="hint full">حدد مبلغ مساهمة كل شريك — يجب أن يساوي المجموع إجمالي المبلغ، وتُسجَّل كإيداع في حساب كل شريك ثم كمصروف واحد.</div>`+(PT.map(x=>F(p+'_s'+x.id,'مساهمة '+esc(x.name),'number','min=0 step=any value=0')).join('')||'<div class="hint">لا يوجد شركاء</div>'):''}
-const PMV=p=>{const g=id=>$('#'+p+'_'+id),via=g('m').value,ref=g('r')?g('r').value.trim():null;if(via=='ext'&&!ref)throw Error('اكتب كود التحويل أو نوع التطبيق');if(via=='inst'&&!(g('u')&&g('u').value))throw Error('حدد تاريخ الاستحقاق');
- return{via,ref,inst:g('n')?{n:Math.max(1,+g('n').value||1),u:g('u').value,g:+g('g').value||30}:null,shares:PT.map(x=>({id:x.id,amount:g('s'+x.id)?+g('s'+x.id).value||0:0}))}};
-async function PAY(dir,via,amount,m={},shares=[]){amount=+(+amount).toFixed(2);if(!(amount>0))throw Error('المبلغ غير صحيح');
+const PMV=p=>{const g=id=>$('#'+p+'_'+id),via=g('m').value,ref=g('r')?g('r').value.trim():null;let method=null;
+ if(via=='ext'){if(!ref)throw Error('اكتب كود التحويل أو رقم العملية');method=g('t')?(g('t').value=='__new'?g('tn').value.trim():g('t').value):null;if(!method)throw Error('حدد طريقة التحويل أو اكتب النوع الجديد')}
+ if(via=='inst'&&!(g('u')&&g('u').value))throw Error('حدد تاريخ الاستحقاق');
+ return{via,ref,method,date:g('d')&&g('d').value||td(),inst:g('n')?{n:Math.max(1,+g('n').value||1),u:g('u').value,g:+g('g').value||30}:null,shares:PT.map(x=>({id:x.id,amount:g('s'+x.id)?+g('s'+x.id).value||0:0}))}};
+const DTX=d=>d&&d!=td()?{date:d,created_at:d+'T12:00:00+00:00'}:{};
+const NEWTS=(orig,d)=>d+String(orig||'T12:00:00+00:00').slice(10);
+function DATEDLG(title,cur,fn){MODAL(`<h2>${title}</h2>${FG(F('edd','التاريخ الجديد','date','value="'+cur+'"'))}${ACT(`<button onclick="DATEOK()">حفظ</button><button class="g" onclick="closeModal()">إلغاء</button>`)}`);window.DATEFN=fn}
+const DATEOK=()=>{const d=v('#edd');if(!d)return toast('خطأ: حدد التاريخ');closeModal();go(()=>window.DATEFN(d))};
+async function PAY(dir,via,amount,m={},shares=[]){amount=+(+amount).toFixed(2);if(!(amount>0))throw Error('المبلغ غير صحيح');const {date,method,...rest}=m,dx=DTX(date);
  if(via=='contrib'){const sh=shares.filter(s=>s.amount>0);if(!sh.length||Math.abs(sum(sh,s=>s.amount)-amount)>0.01)throw Error('مجموع مساهمات الشركاء يجب أن يساوي المبلغ ('+fm(amount)+')');
-  for(const s of sh){const t=(await post('treasury_tx',{kind:'in',amount:s.amount,source:'partner',partner_id:s.id,note:'مساهمة لسداد: '+(m.note||'')}))[0];
-   await post('partner_ledger',{partner_id:s.id,kind:'deposit',amount:s.amount,period_id:CUR?.id,note:'مساهمة لسداد: '+(m.note||''),tx_id:t.id})}via='cash'}
- if(via=='cash')return(await post('treasury_tx',{kind:dir,amount,...m}))[0];
- const {partner_id,payee_id,...mm}=m;return(await post('transfers',{dir,amount,...mm}))[0]}
+  for(const s of sh){const t=(await post('treasury_tx',{kind:'in',amount:s.amount,source:'partner',partner_id:s.id,note:'مساهمة لسداد: '+(rest.note||''),...dx}))[0];
+   await post('partner_ledger',{partner_id:s.id,kind:'deposit',amount:s.amount,period_id:CUR?.id,note:'مساهمة لسداد: '+(rest.note||''),tx_id:t.id,...dx})}via='cash'}
+ if(via=='cash')return(await post('treasury_tx',{kind:dir,amount,...rest,...dx}))[0];
+ const {partner_id,payee_id,...mm}=rest;if(method&&!TM.includes(method)){await post('tmethods',{name:method});TM.push(method)}
+ return(await post('transfers',{dir,amount,...mm,method:method||null,...dx}))[0]}
 async function treasuryBal(){const t=await all('treasury_tx?select=kind,amount&order=id');return sum(t,x=>x.kind=='in'?x.amount:-x.amount)}
 
 // ---- الأرباح (تُحسب من بيانات المبيعات والمصروفات العامة)
